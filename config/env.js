@@ -1,0 +1,16 @@
+import { config } from "dotenv";
+
+const environment = process.env.NODE_ENV || 'development';
+const envFile = `.env.${environment}`;
+
+config({ path: envFile });
+
+// Export environment variables with defaults for all required variables
+export const {
+    NODE_ENV = 'development',
+    PORT = 3000,
+    ARCJET_KEY,
+    SERVICE_NAME = 'mysecondbrain-backend',
+    LOG_LEVEL = 'info',
+    DB_URI
+} = process.env;
