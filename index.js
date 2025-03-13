@@ -8,6 +8,7 @@ import errorMiddleware from './middlewares/error.middleware.js'
 import { errors } from 'celebrate';
 import Response from './utils/Response.js';
 import Logger from './utils/Logger.js';
+import appRoute from './routes/app.routes.js';
 import { initializeDatabase } from './databases/mysql8/sequelizeConnect.js';
 
 const logger = new Logger();
@@ -26,7 +27,7 @@ app.use(cookieParser());
 
 // TODO: add AccessLog filter validation here
 
-// app.use(appRoute);
+app.use(appRoute);
 
 // Handle celebrate/validation errors
 app.use(errors());

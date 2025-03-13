@@ -7,6 +7,9 @@ config({ path: envFile });
 
 // Export environment variables with defaults for all required variables
 export const {
+    JWT_SECRET,
+    JWT_EXPIRES_IN,
+    JWT_REFRESH_EXPIRES_IN,
     NODE_ENV = 'development',
     PORT = 3000,
     ARCJET_KEY,

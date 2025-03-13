@@ -43,7 +43,7 @@ User.init({
     tableName: 'users',
     timestamps: true,
     createdAt: 'created_at',
-    updatedAt: 'updated_at'
+    updatedAt: 'updated_at',
 });
 
 // RefreshToken Model
@@ -65,13 +65,18 @@ RefreshToken.init({
     is_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: false
     }
 }, {
     sequelize,
     modelName: 'RefreshToken',
     tableName: 'refresh_tokens',
     timestamps: true,
-    createdAt: 'created_at'
+    createdAt: 'created_at',
+    updatedAt: false
 });
 
 // Document Model
@@ -167,7 +172,7 @@ Vector.init({
         allowNull: false
     },
     vector_id: {
-        type: DataTypes.BINARY(16),
+        type: DataTypes.BLOB,
         allowNull: false
     },
     embedding_id: {

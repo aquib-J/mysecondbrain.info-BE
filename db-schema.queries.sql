@@ -18,6 +18,7 @@ CREATE TABLE refresh_tokens (
     user_id INT UNSIGNED NOT NULL,                      -- Reference to users table
     refresh_token VARCHAR(512) NOT NULL,                -- Refresh token value
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- Timestamp of token creation
+    expires_at TIMESTAMP NOT NULL,                      -- Timestamp of token expiration
     is_active TINYINT(1) NOT NULL DEFAULT 1,            -- Token status (1 for active, 0 for inactive)
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE -- Relationship to users table
 );
