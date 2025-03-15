@@ -4,6 +4,7 @@ import { StatusCodes } from 'http-status-codes';
 import { PORT } from './config/env.js';
 import cookieParser from 'cookie-parser';
 import errorMiddleware from './middlewares/error.middleware.js'
+import fileUpload from 'express-fileupload';
 // import arcjetMiddleware from './middlewares/arcjet.middleware.js'
 import { errors } from 'celebrate';
 import Response from './utils/Response.js';
@@ -22,6 +23,7 @@ app.get('/status', (req, res) => {
 
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(fileUpload());
 app.use(cookieParser());
 // app.use(arcjetMiddleware);
 

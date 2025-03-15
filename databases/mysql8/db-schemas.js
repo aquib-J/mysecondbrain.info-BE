@@ -87,6 +87,10 @@ Document.init({
         primaryKey: true,
         autoIncrement: true
     },
+    file_type: {
+        type: DataTypes.ENUM('pdf', 'doc', 'docx', 'json'),
+        allowNull: false
+    },
     filename: {
         type: DataTypes.STRING(255),
         allowNull: false
@@ -102,7 +106,7 @@ Document.init({
         type: DataTypes.INTEGER.UNSIGNED,
         allowNull: false
     },
-    s3_upload_url: {
+    s3_upload_url: { // presigned url of the uploaded file valid for 1 hour
         type: DataTypes.STRING(512),
         allowNull: false
     },
@@ -144,19 +148,22 @@ Job.init({
         allowNull: false
     },
     status: {
-        type: DataTypes.ENUM('pending', 'in_progress', 'success', 'failed'),
+        type: DataTypes.ENUM('pending', 'in_progress', 'success', 'failed', 'cancelled'),
         defaultValue: 'pending'
     },
     metadata: {
         type: DataTypes.JSON
+    },
+    cancelled_at: {
+        type: DataTypes.DATE
     }
 }, {
     sequelize,
     modelName: 'Job',
     tableName: 'jobs',
     timestamps: true,
-    createdAt: 'created',
-    updatedAt: 'modified'
+    createdAt: 'created_at',
+    updatedAt: 'modified_at'
 });
 
 // Vector Model
@@ -195,8 +202,8 @@ Vector.init({
     modelName: 'Vector',
     tableName: 'vectors',
     timestamps: true,
-    createdAt: 'created',
-    updatedAt: 'modified'
+    createdAt: 'created_at',
+    updatedAt: 'modified_at'
 });
 
 // AIProvider Model
@@ -224,7 +231,7 @@ AIProvider.init({
     modelName: 'AIProvider',
     tableName: 'ai_providers',
     timestamps: true,
-    createdAt: 'created'
+    createdAt: 'created_at'
 });
 
 // Define relationships

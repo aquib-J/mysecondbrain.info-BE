@@ -1,5 +1,8 @@
 import { StatusCodes } from "http-status-codes";
 import { isCelebrateError } from "celebrate";
+import Logger from '../utils/Logger.js';
+
+const logger = new Logger();
 
 const errorMiddleware = (err, req, res, next) => {
     try {
@@ -7,7 +10,7 @@ const errorMiddleware = (err, req, res, next) => {
 
         error.message = err.message;
 
-        console.error(err);
+        logger.error('Error retrieving document status', { error: err });
 
 
         /**
@@ -31,12 +34,12 @@ const errorMiddleware = (err, req, res, next) => {
 
         // Mongoose bad ObjectId
         if (err.name === 'CastError') {
-            return Response.fail(res,'Resouce not found', StatusCodes.NOT_FOUND)
+            return Response.fail(res, 'Resouce not found', StatusCodes.NOT_FOUND)
         }
 
         // Mongoose duplicate key
         if (err.code === 11000) {
-            return Response.fail(res, 'Duplicate field value entered',StatusCodes.BAD_REQUEST)
+            return Response.fail(res, 'Duplicate field value entered', StatusCodes.BAD_REQUEST)
         }
 
         // Mongoose validation error

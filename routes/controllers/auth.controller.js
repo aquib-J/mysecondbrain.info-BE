@@ -1,11 +1,11 @@
 import { StatusCodes } from 'http-status-codes';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, RefreshToken } from '../databases/mysql8/db-schemas.js';
-import Response from '../utils/Response.js';
-import Logger from '../utils/Logger.js';
-import { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, NODE_ENV } from '../config/env.js';
-import sequelize from '../databases/mysql8/sequelizeConnect.js'; // Import sequelize for transactions
+import { User, RefreshToken } from '../../databases/mysql8/db-schemas.js';
+import Response from '../../utils/Response.js';
+import Logger from '../../utils/Logger.js';
+import { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, NODE_ENV } from '../../config/env.js';
+import sequelize from '../../databases/mysql8/sequelizeConnect.js'; // Import sequelize for transactions
 
 const logger = new Logger();
 const SALT_ROUNDS = 10; // Number of rounds for bcrypt hashing

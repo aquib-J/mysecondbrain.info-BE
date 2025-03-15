@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import authenticateMiddleware from '../middlewares/auth.middleware.js';
-import { signup, login, logout } from './auth.routes.js';
-// import userRoutes from './user.routes.js';
-// import documentRoutes from './document.routes.js';
+import { signup, login, logout } from './controllers/auth.controller.js';
+import { uploadDocument, updateDocument, getDocumentStatus, deleteDocument, listDocuments, downloadDocument } from './controllers/document.controller.js';
+
 // import chatRoutes from './chat.routes.js';
 import { signupValidation, loginValidation, logoutValidation } from '../middlewares/validation.middleware.js';
+import { uploadDocumentValidation, updateDocumentValidation, getDocumentStatusValidation, deleteDocumentValidation } from '../middlewares/validation.middleware.js';
 
 const appRoute = Router();
 
@@ -14,8 +15,14 @@ appRoute.post('/api/v1/auth/login', loginValidation, login);
 
 // For Authenticated Routes
 appRoute.use(authenticateMiddleware);
-// appRoute.use('/api/v1/users', userRoutes);
-// appRoute.use('/api/v1/documents', documentRoutes);
+appRoute.post('/api/v1/documents/upload', uploadDocumentValidation, uploadDocument);
+appRoute.post('/api/v1/documents/update/:documentId', updateDocumentValidation, updateDocument);
+appRoute.get('/api/v1/documents/list', listDocuments);
+appRoute.get('/api/v1/documents/download/:documentId', downloadDocument);
+appRoute.get('/api/v1/documents/status/:documentId', getDocumentStatusValidation, getDocumentStatus);
+appRoute.delete('/api/v1/documents/delete/:documentId', deleteDocumentValidation, deleteDocument);
+
+
 // appRoute.use('/api/v1/chats', chatRoutes);
 
 // Logout route with validation

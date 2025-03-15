@@ -7,6 +7,10 @@ config({ path: envFile });
 
 // Export environment variables with defaults for all required variables
 export const {
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_REGION,
+    AWS_S3_BUCKET_NAME,
     JWT_SECRET,
     JWT_EXPIRES_IN,
     JWT_REFRESH_EXPIRES_IN,

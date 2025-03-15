@@ -1,5 +1,3 @@
-
-
 CREATE TABLE users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, -- Unique user identifier
     email VARCHAR(255) NOT NULL UNIQUE,            -- User email (unique and mandatory)
@@ -36,7 +34,6 @@ CREATE TABLE documents (
     status ENUM('active', 'deleted') DEFAULT 'active',  -- Document status
     FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE -- Relationship to users table
 );
-
 
 CREATE TABLE jobs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,         -- Unique job identifier
@@ -78,3 +75,36 @@ CREATE TABLE ai_providers (
 INSERT INTO ai_providers (provider, task, model) 
 VALUES ('OpenAI', 'embedding', 'text-embedding-ada-002');
 
+ALTER TABLE jobs
+ADD COLUMN cancelled_at TIMESTAMP NULL DEFAULT NULL;
+
+ALTER TABLE jobs MODIFY status ENUM('pending', 'in_progress', 'success', 'failed', 'cancelled') NOT NULL DEFAULT 'pending';
+
+ALTER TABLE documents ADD COLUMN file_type ENUM('pdf', 'doc', 'docx', 'json') NOT NULL;
+
+ALTER TABLE jobs CHANGE COLUMN created created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE jobs CHANGE COLUMN modified modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+ALTER TABLE vectors CHANGE COLUMN created created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE vectors CHANGE COLUMN modified modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+ALTER TABLE ai_providers CHANGE COLUMN created created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+-- To update the UNIQUE constraint on the jobs table
+-- Step 1: Find the name of the existing UNIQUE constraint
+SELECT CONSTRAINT_NAME INTO @constraint_name
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+WHERE TABLE_NAME = 'jobs' AND CONSTRAINT_TYPE = 'UNIQUE';
+
+-- Step 2: Drop the existing UNIQUE constraint
+SET @drop_constraint_query = CONCAT('ALTER TABLE jobs DROP INDEX ', @constraint_name);
+PREPARE drop_stmt FROM @drop_constraint_query;
+EXECUTE drop_stmt;
+DEALLOCATE PREPARE drop_stmt;
+
+-- Step 3: Add the new UNIQUE constraint
+ALTER TABLE jobs ADD UNIQUE KEY unique_job (id, doc_id, status);
+
+-- Step 4: Verify the changes
+SHOW CREATE TABLE jobs;
