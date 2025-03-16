@@ -88,6 +88,78 @@ const deleteDocumentValidation = celebrate({
     })
 });
 
+// Validation for chat creation
+const createChatValidation = celebrate({
+    [Segments.BODY]: Joi.object().keys({
+        title: Joi.string().max(100).optional(),
+        messages: Joi.array().items(Joi.object().keys({
+            content: Joi.string().required().messages({
+                'any.required': 'Message content is required'
+            })
+        })).required().messages({
+            'any.required': 'Messages are required'
+        })
+    })
+});
+
+// Validation for getting a chat
+const getChatValidation = celebrate({
+    [Segments.PARAMS]: Joi.object().keys({
+        chatId: Joi.number().required().messages({
+            'any.required': 'Chat ID is required'
+        })
+    }),
+    [Segments.QUERY]: Joi.object().keys({
+        page: Joi.number().min(1).optional(),
+        pageSize: Joi.number().min(1).max(100).optional()
+    })
+});
+
+// Validation for listing chats
+const listChatsValidation = celebrate({
+    [Segments.QUERY]: Joi.object().keys({
+        page: Joi.number().min(1).optional(),
+        pageSize: Joi.number().min(1).max(100).optional()
+    })
+});
+
+// Validation for deleting a chat
+const deleteChatValidation = celebrate({
+    [Segments.PARAMS]: Joi.object().keys({
+        chatId: Joi.number().required().messages({
+            'any.required': 'Chat ID is required'
+        })
+    })
+});
+
+// Validation for querying documents
+const queryDocumentsValidation = celebrate({
+    [Segments.BODY]: Joi.object().keys({
+        query: Joi.string().required().messages({
+            'any.required': 'Query is required'
+        }),
+        chatId: Joi.number().optional(),
+        documentId: Joi.number().optional()
+    })
+});
+
+// Validation for structured query
+const structuredQueryValidation = celebrate({
+    [Segments.BODY]: Joi.object().keys({
+        operation: Joi.string().valid('max', 'min', 'sum', 'avg').required().messages({
+            'any.required': 'Operation is required',
+            'any.only': 'Operation must be one of: max, min, sum, avg'
+        }),
+        field: Joi.string().required().messages({
+            'any.required': 'Field is required'
+        }),
+        filter: Joi.object().optional(),
+        documentId: Joi.number().required().messages({
+            'any.required': 'Document ID is required'
+        })
+    })
+});
+
 // Export the validation middleware
 export {
     signupValidation,
@@ -96,5 +168,11 @@ export {
     uploadDocumentValidation,
     updateDocumentValidation,
     getDocumentStatusValidation,
-    deleteDocumentValidation
+    deleteDocumentValidation,
+    createChatValidation,
+    getChatValidation,
+    listChatsValidation,
+    deleteChatValidation,
+    queryDocumentsValidation,
+    structuredQueryValidation
 };

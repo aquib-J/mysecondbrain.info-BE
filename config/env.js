@@ -19,5 +19,10 @@ export const {
     ARCJET_KEY,
     SERVICE_NAME = 'mysecondbrain-backend',
     LOG_LEVEL = 'info',
-    DB_URI
+    DB_URI,
+    OPENAI_API_KEY,
+    OPENAI_EMBEDDING_MODEL,
+    OPENAI_CHAT_MODEL,
+    WEAVIATE_SCHEME = 'http',
+    WEAVIATE_HOST = 'localhost:8080'
 } = process.env;

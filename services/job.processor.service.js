@@ -1,31 +1,40 @@
-import { Job, Document } from '../databases/mysql8/db-schemas.js';
-import { getFileMetadata } from '../utils/s3.utils.js';
+import langchainService from './langchain.service.js';
+import openaiService from './openai.service.js';
+import weaviateService from './weaviate.service.js';
 import Logger from '../utils/Logger.js';
+import path from 'path';
+import fs from 'fs';
+import jobService from './Jobs.js';
+import s3Utils from '../utils/s3.utils.js';
 
 const logger = new Logger();
 
 class JobProcessorService {
+    constructor() {
+        this.docStore = path.join(process.cwd(), 'doc-store');
+        // Ensure doc-store directory exists
+        if (!fs.existsSync(this.docStore)) {
+            fs.mkdirSync(this.docStore, { recursive: true });
+        }
+    }
+
     /**
      * Process pending jobs
      * @returns {Promise<void>}
      */
     async processPendingJobs() {
         try {
-            const pendingJobs = await Job.findAll({
-                where: {
-                    status: 'pending',
-                    dueAt: {
-                        [Op.lte]: new Date()
-                    }
-                },
-                include: [{
-                    model: Document,
-                    required: true
-                }]
-            });
+            const pendingJobs = await jobService.getPendingJobs(10);
+
+            if (!pendingJobs) {
+                logger.info('No pending jobs found');
+                return;
+            }
+
+            logger.info(`Found ${pendingJobs.length} pending jobs to process`);
 
             for (const job of pendingJobs) {
-                await this.#processJob(job);
+                await this._processJob(job);
             }
         } catch (error) {
             logger.error('Error processing pending jobs', { error });
@@ -35,102 +44,70 @@ class JobProcessorService {
     /**
      * Process a single job
      * @private
-     * @param {Object} job - The job to process
+     * @param {{id: number, Document: {id: number, filename: string, file_type: string, s3_upload_url: string}}}    job - The job to process
      * @returns {Promise<void>}
      */
-    async #processJob(job) {
+    async _processJob(job) {
         try {
-            // Update job status to processing
-            await job.update({ status: 'processing' });
+            // Update job status to in_progress
+            await job.update({ status: 'in_progress' });
 
-            // Get document metadata
-            const metadata = await getFileMetadata(job.Document.s3Key);
+            // Download document from S3
+            const s3_key = s3Utils.fetchKeyFromDbUrl(job.Document.s3_upload_url);
+            const localFilePath = path.join(this.docStore, `${job.Document.id}_${job.Document.filename}`);
 
-            // Process based on job type
-            switch (job.type) {
-                case 'pdf_processing':
-                    await this.#processPDF(job.Document);
-                    break;
-                case 'json_processing':
-                    await this.#processJSON(job.Document);
-                    break;
-                case 'doc_processing':
-                    await this.#processDOC(job.Document);
-                    break;
-                default:
-                    await this.#processGeneric(job.Document);
-            }
+            await this._downloadFile(s3_key, localFilePath);
+            // Process document with Langchain
+            const chunks = await langchainService.processDocument(localFilePath, job.Document.file_type);
 
-            // Update job and document status
-            await job.update({ status: 'completed' });
-            await job.Document.update({ status: 'processed' });
+            //TODO: very important: 
+            //Create a vector table entry for each chunk in DB for each job with status 'in_progress'
+            // and use the vector.id to store in the weaviate vector table
+            // const vectorTableEntries = await jobService.createVectorTableEntries(job.id, chunks);
+
+
+            // Create embeddings with OpenAI
+            const vectors = await openaiService.createEmbeddings(chunks, job.id);
+
+            // Store vectors in Weaviate
+            await weaviateService.storeVectors(vectors);
+
+            // Update job status to success
+            await job.update({ status: 'success' });
+            // Clean up
+            await langchainService.cleanup(localFilePath);
 
             logger.info('Job processed successfully', { jobId: job.id });
         } catch (error) {
             logger.error('Error processing job', { jobId: job.id, error });
             await job.update({ status: 'failed' });
-            await job.Document.update({ status: 'failed' });
         }
     }
 
     /**
-     * Process PDF document
+     * Download file from S3
      * @private
-     * @param {Object} document - The document to process
+     * @param {string} s3_key - S3 key to download from
+     * @param {string} destination - Path to save the file
      * @returns {Promise<void>}
      */
-    async #processPDF(document) {
-        // TODO: Implement PDF processing logic
-        // 1. Download file from S3
-        // 2. Extract text using pdf-parse
-        // 3. Create vectors using OpenAI
-        // 4. Store vectors in Weaviate
-        throw new Error('PDF processing not implemented');
-    }
 
-    /**
-     * Process JSON document
-     * @private
-     * @param {Object} document - The document to process
-     * @returns {Promise<void>}
-     */
-    async #processJSON(document) {
-        // TODO: Implement JSON processing logic
-        // 1. Download file from S3
-        // 2. Parse JSON
-        // 3. Create vectors using OpenAI
-        // 4. Store vectors in Weaviate
-        throw new Error('JSON processing not implemented');
-    }
+    async _downloadFile(s3_key, destination) {
+        try {
+            const writer = fs.createWriteStream(destination);
+            const fileBuffer = await s3Utils.downloadFromS3(s3_key);
+            writer.write(fileBuffer);
+            writer.end();
 
-    /**
-     * Process DOC document
-     * @private
-     * @param {Object} document - The document to process
-     * @returns {Promise<void>}
-     */
-    async #processDOC(document) {
-        // TODO: Implement DOC processing logic
-        // 1. Download file from S3
-        // 2. Extract text using mammoth
-        // 3. Create vectors using OpenAI
-        // 4. Store vectors in Weaviate
-        throw new Error('DOC processing not implemented');
-    }
+            return new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
 
-    /**
-     * Process generic document
-     * @private
-     * @param {Object} document - The document to process
-     * @returns {Promise<void>}
-     */
-    async #processGeneric(document) {
-        // TODO: Implement generic processing logic
-        // 1. Download file from S3
-        // 2. Extract text based on content type
-        // 3. Create vectors using OpenAI
-        // 4. Store vectors in Weaviate
-        throw new Error('Generic processing not implemented');
+        } catch (error) {
+            logger.error('Error downloading file', { error });
+            throw error;
+        }
     }
 }
 

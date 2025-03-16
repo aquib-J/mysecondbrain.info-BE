@@ -250,11 +250,61 @@ Vector.belongsTo(Job, { foreignKey: 'job_id' });
 Vector.belongsTo(AIProvider, { foreignKey: 'embedding_id' });
 AIProvider.hasMany(Vector, { foreignKey: 'embedding_id' });
 
+// Chat Model
+class Chat extends Model { }
+Chat.init({
+
+    // TODO: need to add chat_id as UUID type and add columns 'type' -> 'user' | 'system' to verify if it's a user or system chat
+    // TODO: need to add `metadata` column to record user feedback on the last reply {feedback: 'thumbs-up' | 'thumbs-down', reply_id: 1}
+    // and also document source {document_id: 1, page_number: 1} etc for the last reply
+    id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    user_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false
+    },
+    chat_id: {
+        type: DataTypes.STRING(36),
+        allowNull: false,
+        unique: true
+    },
+    title: {
+        type: DataTypes.STRING(100),
+        allowNull: false
+    },
+    messages: {
+        type: DataTypes.JSON,
+        defaultValue: []
+    },
+    status: {
+        type: DataTypes.ENUM('active', 'deleted'),
+        defaultValue: 'active'
+    },
+    deleted_at: {
+        type: DataTypes.DATE
+    }
+}, {
+    sequelize,
+    modelName: 'Chat',
+    tableName: 'chats',
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+});
+
+// Define relationships for Chat
+User.hasMany(Chat, { foreignKey: 'user_id' });
+Chat.belongsTo(User, { foreignKey: 'user_id' });
+
 export {
     User,
     RefreshToken,
     Document,
     Job,
     Vector,
-    AIProvider
-}; 
+    AIProvider,
+    Chat
+};

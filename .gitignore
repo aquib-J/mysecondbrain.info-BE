@@ -133,4 +133,11 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+
 TODO.*
+requirements/
+
+# Doc-store
+doc-store/
+
+

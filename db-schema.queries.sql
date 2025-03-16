@@ -108,3 +108,28 @@ ALTER TABLE jobs ADD UNIQUE KEY unique_job (id, doc_id, status);
 
 -- Step 4: Verify the changes
 SHOW CREATE TABLE jobs;
+
+-- Create Chat table
+CREATE TABLE chats (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,         -- Unique chat identifier
+    user_id INT UNSIGNED NOT NULL,                      -- Reference to users table
+    chat_id VARCHAR(36) NOT NULL UNIQUE,                -- UUID for the chat
+    title VARCHAR(100) NOT NULL,                        -- Chat title
+    messages JSON DEFAULT (JSON_ARRAY()),               -- Chat messages stored as JSON
+    status ENUM('active', 'deleted') DEFAULT 'active',  -- Chat status
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- Timestamp of creation
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Timestamp of last update
+    deleted_at TIMESTAMP NULL DEFAULT NULL,             -- Timestamp of deletion (nullable)
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE -- Relationship to users table
+);
+
+-- Create index on chat_id for faster lookups
+CREATE INDEX idx_chat_id ON chats(chat_id);
+
+-- Create index on user_id for faster user-specific queries
+CREATE INDEX idx_user_id ON chats(user_id);
+
+ALTER TABLE chats ADD COLUMN type ENUM('user', 'system') NOT NULL DEFAULT 'user';
+ALTER TABLE chats ADD COLUMN metadata JSON;
+
+

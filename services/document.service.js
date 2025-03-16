@@ -5,7 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import sequelize from '../databases/mysql8/sequelizeConnect.js';
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
-
+import jobService from './Jobs.js';
+import weaviateService from './weaviate.service.js';
 const logger = new Logger();
 
 
@@ -52,15 +53,9 @@ class DocumentService {
             }, { transaction });
 
             // Create job entry for processing
-            await Job.create({
-                doc_id: document.id,
-                status: 'pending',
-                metadata: {
-                    pages,
-                    job_type: this.#getJobType(contentType),
-                },
-                service: 'secondbrain',
-                resource: 'upload' // TODO: decide the right usage for this
+            await jobService.createJob(document.id, this.#getJobType(contentType), {
+                pages,
+                job_type: this.#getJobType(contentType),
             }, { transaction });
 
             await transaction.commit();
@@ -125,23 +120,25 @@ class DocumentService {
             }, { transaction });
 
             // Cancel any pending jobs
-            await Job.update(
-                { status: 'cancelled', cancelled_at: new Date() },
-                { where: { doc_id: documentId, status: 'pending' }, transaction }
-            );
+            const cancelledPendingJob = await jobService.cancelPendingJobs(document.id, transaction);
 
-            //TODO: delete all vectors for this document from DB and vectorStore (Weaviate) [NOT A RESPONSIBILITY OF THIS SERVICE, NEEDS TO BE implemented by methods in JobService] 
+            if (!cancelledPendingJob) {
+                // Delete all vectors for this document from DB and vectorStore (Weaviate)
+
+                const job = await jobService.getJobByDocId(document.id);
+
+                await jobService.deleteVectors(job.id, transaction);
+
+
+                //TODO: delete all vectors for this document from vectorStore (Weaviate)
+                await weaviateService.deleteVectors(job.id); //NOTE: transaction not supported for this method [Potential Bug]
+
+            }
 
             // Create new job for processing
-            await Job.create({
-                doc_id: document.id,
-                status: 'pending',
-                metadata: {
-                    pages,
-                    job_type: this.#getJobType(contentType),
-                },
-                service: 'secondbrain',
-                resource: 'upload' // TODO: decide the right usage for this
+            await jobService.createJob(document.id, this.#getJobType(contentType), {
+                pages,
+                job_type: this.#getJobType(contentType),
             }, { transaction });
 
             await transaction.commit();
@@ -250,12 +247,15 @@ class DocumentService {
             await document.update({ status: 'deleted', deleted_at: new Date() }, { transaction });
             logger.info('Document soft deleted', { documentId });
             // Cancel any pending jobs
-            await Job.update(
-                { status: 'cancelled', cancelled_at: new Date() },
-                { where: { doc_id: documentId, status: 'pending' }, transaction }
-            );
-            logger.info('All pending jobs cancelled', { documentId });
-            // TODO: delete all vectors for this document from DB and vectorStore (Weaviate)
+            const cancelledPendingJob = await jobService.cancelPendingJobs(document.id, transaction);
+
+            if (!cancelledPendingJob) {
+                // Delete all vectors for this document from DB and vectorStore (Weaviate)
+                const job = await jobService.getJobByDocId(document.id);
+                await jobService.deleteVectors(job.id, transaction);
+                await weaviateService.deleteVectors(job.id); //NOTE: transaction not supported for this method [Potential Bug]
+            }
+
             await transaction.commit();
             logger.info('Document deleted successfully', { documentId });
         } catch (error) {

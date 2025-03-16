@@ -3,7 +3,7 @@ import authenticateMiddleware from '../middlewares/auth.middleware.js';
 import { signup, login, logout } from './controllers/auth.controller.js';
 import { uploadDocument, updateDocument, getDocumentStatus, deleteDocument, listDocuments, downloadDocument } from './controllers/document.controller.js';
 
-// import chatRoutes from './chat.routes.js';
+import chatRoutes from './chat.routes.js';
 import { signupValidation, loginValidation, logoutValidation } from '../middlewares/validation.middleware.js';
 import { uploadDocumentValidation, updateDocumentValidation, getDocumentStatusValidation, deleteDocumentValidation } from '../middlewares/validation.middleware.js';
 
@@ -23,7 +23,7 @@ appRoute.get('/api/v1/documents/status/:documentId', getDocumentStatusValidation
 appRoute.delete('/api/v1/documents/delete/:documentId', deleteDocumentValidation, deleteDocument);
 
 
-// appRoute.use('/api/v1/chats', chatRoutes);
+appRoute.use('/api/v1/chats', chatRoutes);
 
 // Logout route with validation
 appRoute.get('/api/v1/auth/logout', logoutValidation, logout);
