@@ -123,13 +123,41 @@ CREATE TABLE chats (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE -- Relationship to users table
 );
 
+ALTER TABLE chats ADD COLUMN type ENUM('user', 'system') NOT NULL DEFAULT 'user';
+ALTER TABLE chats ADD COLUMN metadata JSON;
+
 -- Create index on chat_id for faster lookups
 CREATE INDEX idx_chat_id ON chats(chat_id);
 
 -- Create index on user_id for faster user-specific queries
 CREATE INDEX idx_user_id ON chats(user_id);
 
-ALTER TABLE chats ADD COLUMN type ENUM('user', 'system') NOT NULL DEFAULT 'user';
-ALTER TABLE chats ADD COLUMN metadata JSON;
+
+ALTER TABLE documents MODIFY COLUMN file_type ENUM('pdf', 'doc', 'docx', 'json','txt') NOT NULL;
+
+ALTER TABLE jobs ADD COLUMN job_type VARCHAR(50) AFTER doc_id;
 
 
+ALTER TABLE jobs ADD COLUMN started_at TIMESTAMP NULL DEFAULT NULL AFTER metadata;
+
+ALTER TABLE jobs ADD COLUMN completed_at TIMESTAMP NULL DEFAULT NULL AFTER started_at;
+
+ALTER TABLE jobs ADD COLUMN output JSON DEFAULT NULL AFTER completed_at;
+
+ALTER TABLE jobs ADD COLUMN error_message TEXT DEFAULT NULL AFTER output;
+
+ALTER TABLE vectors ADD COLUMN embedding JSON NOT NULL AFTER text_content;
+
+ALTER TABLE vectors ADD COLUMN metadata JSON DEFAULT NULL AFTER embedding;
+
+-- Drop unique constraint on Users.username
+
+SELECT CONSTRAINT_NAME INTO @constraint_name
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+WHERE TABLE_NAME = 'users' AND CONSTRAINT_TYPE = 'username';
+
+-- Step 2: Drop the existing UNIQUE constraint
+SET @drop_constraint_query = CONCAT('ALTER TABLE users DROP INDEX ', @constraint_name);
+PREPARE drop_stmt FROM @drop_constraint_query;
+EXECUTE drop_stmt;
+DEALLOCATE PREPARE drop_stmt;

@@ -1,9 +1,20 @@
 import { StatusCodes } from 'http-status-codes';
 import _ from 'lodash';
 const { isObjectLike, isString, isEmpty } = _;
-import { NODE_ENV,SERVICE_NAME } from '../config/env.js';
+import { NODE_ENV, SERVICE_NAME } from '../config/env.js';
+import { requestContext } from './Logger.js';
 
 class Response {
+    /**
+     * Get the current request ID from context
+     * @static
+     * @returns {string|undefined} - Request ID
+     */
+    static getRequestId() {
+        const store = requestContext.getStore();
+        return store?.requestId || (store?.req?.requestId);
+    }
+
     /**
      *@example extra={pagination:{offset:10,limit:50,rows:1000}}
      *@static
@@ -37,6 +48,12 @@ class Response {
                     ? resObj.extra.pagination.currentPage + 1
                     : null;
             delete resObj.extra.pagination.offset;
+        }
+
+        // Add requestId to response if available
+        const requestId = this.getRequestId() || res.locals?.requestId;
+        if (requestId) {
+            resObj.requestId = requestId;
         }
 
         res.status(resObj.code).json(resObj);
@@ -82,6 +99,12 @@ class Response {
                     resObj.extra = extra;
                 }
             }
+        }
+
+        // Add requestId to response if available
+        const requestId = this.getRequestId() || res.locals?.requestId;
+        if (requestId) {
+            resObj.requestId = requestId;
         }
 
         res.status(resObj.code).json(resObj);
@@ -150,6 +173,12 @@ class Response {
             e.extra = type.extra;
         } else {
             e.extra = {};
+        }
+
+        // Add requestId to error if available
+        const requestId = this.getRequestId();
+        if (requestId) {
+            e.requestId = requestId;
         }
 
         this.addErrorStackTrace(e, err);

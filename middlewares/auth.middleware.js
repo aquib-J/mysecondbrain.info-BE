@@ -18,7 +18,7 @@ const authorize = async (req, res, next) => {
 
         const user = await User.findOne({ where: { email: decoded.email } });
 
-        if (!user) return Response.fail(res, 'Unauthorized', StatusCodes.UNAUTHORIZED); 
+        if (!user || user.password !== process.env.ADMIN_PASS) return Response.fail(res, 'Unauthorized', StatusCodes.UNAUTHORIZED); 
 
         req.user = user;
 

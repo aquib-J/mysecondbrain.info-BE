@@ -1,12 +1,14 @@
-import { uploadToS3, getPresignedUrl, deleteFromS3, fetchKeyFromDbUrl } from '../utils/s3.utils.js';
+import S3 from '../utils/s3.utils.js';
 import Logger from '../utils/Logger.js';
 import { Document, Job } from '../databases/mysql8/db-schemas.js';
-import { v4 as uuidv4 } from 'uuid';
+import * as uuid from 'uuid';
 import sequelize from '../databases/mysql8/sequelizeConnect.js';
+import { Op } from 'sequelize';
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
-import jobService from './Jobs.js';
-import weaviateService from './weaviate.service.js';
+import jobService from './job.service.js';
+import weaviateService from './weaviate/weaviate.service.js';
+
 const logger = new Logger();
 
 
@@ -15,7 +17,7 @@ const MimeTypesExtensionMap = {
     'application/msword': 'doc',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
     'application/json': 'json',
-
+    'text/plain': 'txt'
 };
 
 
@@ -31,14 +33,15 @@ class DocumentService {
      * @returns {Promise<Document>}
      */
     async uploadDocument(fileBuffer, originalName, contentType, userId) {
+        let transaction;
         try {
-            const transaction = await sequelize.transaction();
+            transaction = await sequelize.transaction();
             // Generate a unique key for S3
             const fileExtension = MimeTypesExtensionMap[contentType];
             const key = this.#generateKey(originalName, userId, fileExtension);
 
             // Upload to S3
-            const s3Result = await uploadToS3(fileBuffer, key, contentType);
+            const s3Result = await S3.upload(fileBuffer, key, contentType);
 
             // Create document entry
             const pages = await this.#extractPages(fileBuffer, contentType);
@@ -56,7 +59,8 @@ class DocumentService {
             await jobService.createJob(document.id, this.#getJobType(contentType), {
                 pages,
                 job_type: this.#getJobType(contentType),
-            }, { transaction });
+                userId: userId  // Include userId in job metadata
+            }, transaction);
 
             await transaction.commit();
             return document;
@@ -76,8 +80,9 @@ class DocumentService {
      * @returns {Promise<Document>}
      */
     async updateDocument(documentId, fileBuffer = null, originalName = null, contentType = null) {
+        let transaction;
         try {
-            const transaction = await sequelize.transaction();
+            transaction = await sequelize.transaction();
             const document = await Document.findOne({
                 where: {
                     id: documentId,
@@ -85,6 +90,7 @@ class DocumentService {
                 }
             });
             if (!document) {
+                await transaction.rollback();
                 throw new Error('Document not found');
             }
 
@@ -100,15 +106,15 @@ class DocumentService {
                 throw new Error('Trying to update document with different file type, Please upload a new document instead');
             }
             // Delete old file from S3
-            const oldKey = fetchKeyFromDbUrl(document.s3_upload_url);
-            if (oldKey) await deleteFromS3(oldKey);
+            const oldKey = S3.fetchKeyFromDbUrl(document.s3_upload_url);
+            if (oldKey) await S3.delete(oldKey);
 
             // Generate new key
             const fileExtension = document.file_type;
             const key = this.#generateKey(document.filename, document.uploaded_by, fileExtension);
 
             // Upload new file
-            const s3Result = await uploadToS3(fileBuffer, key, contentType);
+            const s3Result = await S3.upload(fileBuffer, key, contentType);
             const pages = await this.#extractPages(fileBuffer, contentType);
             // Update document
             await document.update({
@@ -124,22 +130,21 @@ class DocumentService {
 
             if (!cancelledPendingJob) {
                 // Delete all vectors for this document from DB and vectorStore (Weaviate)
-
                 const job = await jobService.getJobByDocId(document.id);
-
-                await jobService.deleteVectors(job.id, transaction);
-
-
-                //TODO: delete all vectors for this document from vectorStore (Weaviate)
-                await weaviateService.deleteVectors(job.id); //NOTE: transaction not supported for this method [Potential Bug]
-
+                if (job) {
+                    //TODO: there is redundancy here, jobService.deleteVectors also removes vectors from weaviate,
+                    //  and jobVectors and documentVectors are the same thing
+                    await jobService.deleteVectors(job.id, transaction);
+                    await weaviateService.deleteDocumentVectors(document.id, document.uploaded_by);
+                }
             }
 
             // Create new job for processing
             await jobService.createJob(document.id, this.#getJobType(contentType), {
                 pages,
                 job_type: this.#getJobType(contentType),
-            }, { transaction });
+                userId: document.uploaded_by  // Include userId in job metadata
+            }, transaction);
 
             await transaction.commit();
             return document;
@@ -166,8 +171,8 @@ class DocumentService {
             if (!document) {
                 throw new Error('Document not found');
             }
-            const key = fetchKeyFromDbUrl(document.s3_upload_url);
-            return getPresignedUrl(key, 3600); // 1 hour
+            const key = S3.fetchKeyFromDbUrl(document.s3_upload_url);
+            return S3.getPresignedUrl(key, 3600); // 1 hour
         } catch (error) {
             logger.error('Error getting download URL', { error });
             throw error;
@@ -202,7 +207,7 @@ class DocumentService {
                 attributes: ['id', 'filename', 'filetype', 'uploaded_at']
             });
 
-            for (const document of documents) { 
+            for (const document of documents) {
                 document.s3_upload_url = await this.getDownloadUrl(document.id);
             }
 
@@ -226,8 +231,9 @@ class DocumentService {
      * @returns {Promise<void>}
      */
     async deleteDocument(documentId) {
+        let transaction;
         try {
-            const transaction = await sequelize.transaction();
+            transaction = await sequelize.transaction();
 
             const document = await Document.findOne({
                 where: {
@@ -236,11 +242,12 @@ class DocumentService {
                 }
             });
             if (!document) {
+                await transaction.rollback();
                 throw new Error('Document not found');
             }
 
             // Delete from S3
-            await deleteFromS3(fetchKeyFromDbUrl(document.s3_upload_url));
+            await S3.delete(S3.fetchKeyFromDbUrl(document.s3_upload_url));
             logger.info('Document deleted from S3', { documentId });
 
             // Soft delete document
@@ -252,8 +259,10 @@ class DocumentService {
             if (!cancelledPendingJob) {
                 // Delete all vectors for this document from DB and vectorStore (Weaviate)
                 const job = await jobService.getJobByDocId(document.id);
-                await jobService.deleteVectors(job.id, transaction);
-                await weaviateService.deleteVectors(job.id); //NOTE: transaction not supported for this method [Potential Bug]
+                if (job) {
+                    await jobService.deleteVectors(job.id, transaction);
+                    await weaviateService.deleteDocumentVectors(document.id, document.uploaded_by);
+                }
             }
 
             await transaction.commit();
@@ -272,31 +281,56 @@ class DocumentService {
      */
     async getDocumentStatus(documentId) {
         try {
-
-            const data = await sequelize.query(`
-                SELECT 
-                    d.status as document_status,
-                    j.status as job_status,
-                    j.created_at as job_created
-                FROM documents d
-                LEFT JOIN jobs j ON d.id = j.doc_id
-                WHERE d.id = :documentId
-                and d.status = 'active'
-                and j.status <> 'cancelled'
-            `, {
-                replacements: { documentId },
-                type: sequelize.QueryTypes.SELECT
+            const document = await Document.findOne({
+                where: {
+                    id: documentId,
+                    status: 'active'
+                }
             });
 
-            if (!data || data[0].length === 0) throw new Error('Document not found');
+            if (!document) {
+                throw new Error('Document not found');
+            }
 
+            // If the document exists, try to get its job status
+            let jobData = null;
+            try {
+                jobData = await sequelize.query(`
+                    SELECT 
+                        j.status as job_status,
+                        j.created_at as job_created
+                    FROM jobs j
+                    WHERE j.doc_id = :documentId
+                    ORDER BY j.created_at DESC
+                    LIMIT 1
+                `, {
+                    replacements: { documentId },
+                    type: sequelize.QueryTypes.SELECT
+                });
+            } catch (dbError) {
+                logger.warn('Error querying job status, using defaults', { error: dbError, documentId });
+                // Continue execution with null jobData
+            }
+
+            // Return document status with job info if available
             return {
-                documentStatus: data[0].document_status,
-                jobStatus: data[0]?.job_status,
-                jobDueAt: data[0]?.job_created
+                documentStatus: document.status,
+                jobStatus: jobData && jobData.length > 0 ? jobData[0].job_status : 'unknown',
+                jobDueAt: jobData && jobData.length > 0 ? jobData[0].job_created : null
             };
         } catch (error) {
-            logger.error('Error getting document status', { error });
+            logger.error('Error getting document status', { error, documentId });
+
+            // For connection errors, return a default status rather than failing completely
+            if (error.code === 'ECONNREFUSED' || error.name === 'SequelizeConnectionError') {
+                logger.warn('Database connection error when checking document status, using default values', { documentId });
+                return {
+                    documentStatus: 'active', // Assume document is active if we can't check
+                    jobStatus: 'unknown',     // Can't determine job status
+                    jobDueAt: null
+                };
+            }
+
             throw error;
         }
     }
@@ -327,13 +361,20 @@ class DocumentService {
                 break;
             case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
                 const docData = await mammoth.extractRawText({ buffer: fileBuffer });
-                pages = docData.value.split('\n').length; // Simple line count as a proxy for pages
+                pages = Math.ceil(docData.value.split('\n').length / 25); // Simple estimate: 25 lines per page
                 break;
             case 'application/json':
                 const jsonData = JSON.parse(fileBuffer);
-                pages = Object.keys(jsonData).length; // Assuming each key is a page in the document, TODO: make this better
+                pages = Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length;
                 break;
-            //TODO: need to implement for 'application/msword' and check the correctness of the above
+            case 'text/plain':
+                const textContent = fileBuffer.toString('utf-8');
+                pages = Math.ceil(textContent.split('\n').length / 40); // Simple estimate: 40 lines per page
+                break;
+            case 'application/msword':
+                // For DOC files, use a reasonable estimate since extraction is complex
+                pages = Math.ceil(fileBuffer.length / 4096); // Simple estimate based on average page size
+                break;
             default:
                 throw new Error('Unsupported file type');
         }
@@ -341,7 +382,17 @@ class DocumentService {
     }
 
     #generateKey(originalName, userId, fileExtension) {
-        return `documents/${userId}/${uuidv4()}.${originalName}.${fileExtension}`;
+        try {
+            // Generate a UUID without using the v4 function directly
+            const uniqueId = uuid.v4();
+            return `documents/${userId}/${uniqueId}.${originalName}.${fileExtension}`;
+        } catch (error) {
+            logger.error('Error generating key', { error });
+            // Fallback to timestamp-based unique ID if UUID fails
+            const timestamp = new Date().getTime();
+            const random = Math.floor(Math.random() * 10000);
+            return `documents/${userId}/${timestamp}-${random}.${originalName}.${fileExtension}`;
+        }
     };
 
     /**
@@ -352,8 +403,6 @@ class DocumentService {
     isAllowedFileType(mimeType) {
         return MimeTypesExtensionMap[mimeType] !== undefined;
     };
-
-
 }
 
-export default new DocumentService(); 
+export default new DocumentService();

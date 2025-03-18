@@ -27,7 +27,7 @@ class s3Utils {
  * @param {string} contentType - mime type of the file
  * @returns {Promise<{Location: string, Key: string}>}
  */
- uploadToS3 = async (fileBuffer, key, contentType) => {
+ upload = async (fileBuffer, key, contentType) => {
     try {
         const command = new PutObjectCommand({
             Bucket: this.BUCKET_NAME,
@@ -53,7 +53,7 @@ class s3Utils {
  * @param {string} key - The key (path) of the file in S3
  * @returns {Promise<Buffer>} - The file buffer
  */
- downloadFromS3 = async (key) => {
+ download = async (key) => {
     try {
         const command = new GetObjectCommand({
             Bucket: this.BUCKET_NAME,
@@ -94,14 +94,14 @@ class s3Utils {
  * @param {string} key - The key (path) of the file in S3
  * @returns {Promise<void>}
  */
- deleteFromS3 = async (key) => {
+ delete = async (key) => {
     try {
         const command = new DeleteObjectCommand({
             Bucket: this.BUCKET_NAME,
             Key: key
         });
 
-        await this.s3Client.send(command);
+        return await this.s3Client.send(command);
     } catch (error) {
         logger.error('Error deleting file from S3', { error });
         throw error;
@@ -113,7 +113,7 @@ class s3Utils {
  * @param {string} key - The key (path) of the file in S3
  * @returns {Promise<Object>}
  */
- getFileMetadata = async (key) => {
+ fileMetadata = async (key) => {
     try {
         const command = new GetObjectCommand({
             Bucket: this.BUCKET_NAME,

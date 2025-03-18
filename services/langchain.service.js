@@ -1,9 +1,10 @@
-import { PDFLoader } from "langchain/document_loaders/fs/pdf";
-import { DocxLoader } from "langchain/document_loaders/fs/docx";
-import { JSONLoader } from "langchain/document_loaders/fs/json";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
+import { DocxLoader } from "@langchain/community/document_loaders/fs/docx";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { Document as LangchainDocument } from "langchain/document";
 import { TextLoader } from "langchain/document_loaders/fs/text";
+
+
 import fs from 'fs';
 import path from 'path';
 import Logger from '../utils/Logger.js';
@@ -39,7 +40,7 @@ class LangchainService {
                     docs = await this._processJSON(filePath);
                     break;
                 case 'txt':
-                    docs = await this._processTXT(filePath); //TODO: need to handle '.txt' files & contentType = 'text/plain' | contentType from document.contentType == extension, not mime type
+                    docs = await this._processTXT(filePath);
                     break;
                 default:
                     throw new Error(`Unsupported file type: ${fileType}`);
@@ -86,24 +87,74 @@ class LangchainService {
      */
     async _processJSON(filePath) {
         try {
-            // Create a custom JSON loader with specific configuration for our use case
-            const loader = new JSONLoader(filePath, {
-                // Extract content from specific fields if needed
-                extractMetadata: () => {
-                    return {
-                        source: filePath,
-                        format: 'json'
-                    };
-                },
-                // Custom pointer to extract content (if needed)
-                pointers: []
-            });
+            // Read the raw JSON file to process it in a more structured way
+            const fileContent = fs.readFileSync(filePath, 'utf8');
+            const jsonData = JSON.parse(fileContent);
 
-            return await loader.load();
+            // Handle both array and object formats
+            const jsonItems = Array.isArray(jsonData) ? jsonData : [jsonData];
+
+            // Create documents for each item or entry in the JSON
+            const documents = [];
+
+            for (const [index, item] of jsonItems.entries()) {
+                // Flatten the item to handle nested structures
+                const flatItem = this._flattenJSON(item, '');
+
+                // Create a text representation of the item
+                let textContent = '';
+                for (const [key, value] of Object.entries(flatItem)) {
+                    textContent += `${key}: ${value}\n`;
+                }
+
+                // Create a document with both the text representation and structured metadata
+                documents.push(
+                    new LangchainDocument({
+                        pageContent: textContent,
+                        metadata: {
+                            source: filePath,
+                            format: 'json',
+                            index,
+                            originalItem: item,
+                            flattenedItem: flatItem
+                        }
+                    })
+                );
+            }
+
+            return documents;
         } catch (error) {
             logger.error('Error processing JSON document', { error, filePath });
             throw error;
         }
+    }
+
+    /**
+     * Flatten a nested JSON object
+     * @private
+     * @param {Object} obj - The object to flatten
+     * @param {string} prefix - The current path prefix
+     * @returns {Object} - Flattened object with dot notation paths
+     */
+    _flattenJSON(obj, prefix) {
+        const result = {};
+
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                const newKey = prefix ? `${prefix}.${key}` : key;
+
+                if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+                    Object.assign(result, this._flattenJSON(obj[key], newKey));
+                } else if (Array.isArray(obj[key])) {
+                    // Handle arrays by joining their values
+                    result[newKey] = obj[key].join(', ');
+                } else {
+                    result[newKey] = obj[key];
+                }
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -114,7 +165,15 @@ class LangchainService {
      */
     async _processTXT(filePath) {
         const loader = new TextLoader(filePath);
-        return await loader.load();
+        const docs = await loader.load();
+        return docs.map(doc => ({
+            pageContent: doc.pageContent,
+            metadata: {
+                ...doc.metadata,
+                format: 'txt',
+                source: filePath
+            }
+        }));
     }
 
     /**

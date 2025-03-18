@@ -88,7 +88,7 @@ Document.init({
         autoIncrement: true
     },
     file_type: {
-        type: DataTypes.ENUM('pdf', 'doc', 'docx', 'json'),
+        type: DataTypes.ENUM('pdf', 'doc', 'docx', 'json', 'txt'),
         allowNull: false
     },
     filename: {
@@ -139,6 +139,10 @@ Job.init({
         type: DataTypes.INTEGER.UNSIGNED,
         allowNull: false
     },
+    job_type: {
+        type: DataTypes.STRING(50),
+        allowNull: true
+    },
     service: {
         type: DataTypes.STRING(16),
         defaultValue: 'secondbrain'
@@ -154,8 +158,20 @@ Job.init({
     metadata: {
         type: DataTypes.JSON
     },
+    started_at: {
+        type: DataTypes.DATE
+    },
+    completed_at: {
+        type: DataTypes.DATE
+    },
     cancelled_at: {
         type: DataTypes.DATE
+    },
+    output: {
+        type: DataTypes.JSON
+    },
+    error_message: {
+        type: DataTypes.TEXT
     }
 }, {
     sequelize,
@@ -188,6 +204,13 @@ Vector.init({
     },
     text_content: {
         type: DataTypes.TEXT
+    },
+    embedding: {
+        type: DataTypes.JSON,
+        allowNull: false
+    },
+    metadata: {
+        type: DataTypes.JSON
     },
     is_active: {
         type: DataTypes.BOOLEAN,
@@ -242,7 +265,7 @@ User.hasMany(Document, { foreignKey: 'uploaded_by' });
 Document.belongsTo(User, { foreignKey: 'uploaded_by' });
 
 Document.hasMany(Job, { foreignKey: 'doc_id' });
-Job.belongsTo(Document, { foreignKey: 'doc_id' });
+Job.belongsTo(Document, { foreignKey: 'doc_id', as: 'document' });
 
 Job.hasMany(Vector, { foreignKey: 'job_id' });
 Vector.belongsTo(Job, { foreignKey: 'job_id' });
@@ -253,10 +276,6 @@ AIProvider.hasMany(Vector, { foreignKey: 'embedding_id' });
 // Chat Model
 class Chat extends Model { }
 Chat.init({
-
-    // TODO: need to add chat_id as UUID type and add columns 'type' -> 'user' | 'system' to verify if it's a user or system chat
-    // TODO: need to add `metadata` column to record user feedback on the last reply {feedback: 'thumbs-up' | 'thumbs-down', reply_id: 1}
-    // and also document source {document_id: 1, page_number: 1} etc for the last reply
     id: {
         type: DataTypes.INTEGER.UNSIGNED,
         primaryKey: true,
@@ -274,6 +293,15 @@ Chat.init({
     title: {
         type: DataTypes.STRING(100),
         allowNull: false
+    },
+    type: {
+        type: DataTypes.ENUM('user', 'system'),
+        defaultValue: 'user',
+        allowNull: false
+    },
+    metadata: {
+        type: DataTypes.JSON,
+        defaultValue: {}
     },
     messages: {
         type: DataTypes.JSON,

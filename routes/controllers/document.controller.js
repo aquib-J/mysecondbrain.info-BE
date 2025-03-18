@@ -2,7 +2,7 @@ import Response from '../../utils/Response.js';
 import Logger from '../../utils/Logger.js';
 import DocumentService from '../../services/document.service.js';
 import { StatusCodes } from 'http-status-codes';
-import UtilityMethods from '../../utils/utilityMethods.js';
+import { UtilityMethods as util} from '../../utils/utilityMethods.js';
 const logger = new Logger();
 
 // Upload Document
@@ -18,7 +18,7 @@ const logger = new Logger();
          filename = filename || file.name;
          filetype = filetype || file.mimetype;         
 
-         filename = UtilityMethods.cleanAndJoinString(filename);
+         filename = util.cleanAndJoinString(filename);
          
          if(!DocumentService.isAllowedFileType(file.mimetype)) {
             return Response.fail(res, 'Invalid file type', StatusCodes.BAD_REQUEST);
@@ -42,9 +42,11 @@ const updateDocument = async (req, res) => {
     }
     try {
         let { filename } = req.body;
-        filename = filename || req.files?.file?.name;
-        if(filename) filename = UtilityMethods.cleanAndJoinString(filename);
         const file = req.files?.file;
+
+        filename = filename || file?.name;
+        if(filename) filename = util.cleanAndJoinString(filename);
+        
         const document = await DocumentService.updateDocument(documentId, file?.data, filename, file?.mimetype);
         return Response.success(res, 'Document updated successfully', document);
     } catch (error) {

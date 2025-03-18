@@ -1,6 +1,7 @@
 import { StatusCodes } from "http-status-codes";
 import { isCelebrateError } from "celebrate";
 import Logger from '../utils/Logger.js';
+import Response from '../utils/Response.js';
 
 const logger = new Logger();
 
@@ -10,7 +11,7 @@ const errorMiddleware = (err, req, res, next) => {
 
         error.message = err.message;
 
-        logger.error('Error retrieving document status', { error: err });
+        logger.error('Error occurred', { error: err });
 
 
         /**
@@ -46,6 +47,11 @@ const errorMiddleware = (err, req, res, next) => {
         if (err.name === 'ValidationError') {
             const message = Object.values(err.errors).map(val => val.message);
             return Response.fail(res, message.join(', '), StatusCodes.BAD_REQUEST);
+        }
+
+        // Add Weaviate error handling
+        if (err.name === 'WeaviateError') {
+            return Response.fail(res, 'Vector database error', StatusCodes.INTERNAL_SERVER_ERROR);
         }
 
         res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Server Error' });

@@ -1,4 +1,13 @@
 import { celebrate, Joi, Segments } from 'celebrate';
+import Response from '../utils/Response.js';
+
+const VALID_FILE_TYPES = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/json',
+    'text/plain'
+];
 
 // Validation for signup
 const signupValidation = celebrate({
@@ -7,8 +16,7 @@ const signupValidation = celebrate({
             'string.email': 'Email must be a valid email address',
             'any.required': 'Email is required'
         }),
-        username: Joi.string().alphanum().min(3).max(30).required().messages({
-            'string.alphanum': 'Username must be alphanumeric',
+        username: Joi.string().min(3).max(30).required().messages({
             'string.min': 'Username must be at least 3 characters long',
             'string.max': 'Username must be at most 30 characters long',
             'any.required': 'Username is required'
@@ -46,14 +54,9 @@ const uploadDocumentValidation = celebrate({
         filename: Joi.string().required().messages({
             'any.required': 'Filename is required'
         }),
-        filetype: Joi.string().valid(
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/json',
-        ).required().messages({
+        filetype: Joi.string().valid(...VALID_FILE_TYPES).required().messages({
             'any.required': 'File type is required',
-            'any.only': 'File type must be one of the following: pdf, doc, docx, json'
+            'any.only': `File type must be one of the following: ${VALID_FILE_TYPES.join(', ')}`,
         }),
     }),
 });
@@ -64,16 +67,16 @@ const updateDocumentValidation = celebrate({
         filename: Joi.string().optional()
     }),
     [Segments.PARAMS]: Joi.object().keys({
-        documentId: Joi.string().required().messages({
+        documentId: Joi.number().integer().min(1).required().messages({
             'any.required': 'Document ID is required'
-        }).required()
+        })
     })
 });
 
 // Validation for getting document status
 const getDocumentStatusValidation = celebrate({
     [Segments.PARAMS]: Joi.object().keys({
-        documentId: Joi.string().required().messages({
+        documentId: Joi.number().integer().min(1).required().messages({
             'any.required': 'Document ID is required'
         })
     })
@@ -82,83 +85,218 @@ const getDocumentStatusValidation = celebrate({
 // Validation for deleting document
 const deleteDocumentValidation = celebrate({
     [Segments.PARAMS]: Joi.object().keys({
-        documentId: Joi.string().required().messages({
+        documentId: Joi.number().integer().min(1).required().messages({
             'any.required': 'Document ID is required'
         })
     })
 });
 
 // Validation for chat creation
-const createChatValidation = celebrate({
-    [Segments.BODY]: Joi.object().keys({
-        title: Joi.string().max(100).optional(),
-        messages: Joi.array().items(Joi.object().keys({
-            content: Joi.string().required().messages({
-                'any.required': 'Message content is required'
-            })
-        })).required().messages({
-            'any.required': 'Messages are required'
-        })
-    })
-});
+export const createChatValidation = (req, res, next) => {
+    try {
+        const { title, query, documentId } = req.body;
+
+        // Query is required to create a chat
+        if (!query || typeof query !== 'string' || query.trim().length < 1) {
+            return Response.fail(res, 'Query is required and must be a non-empty string', 400);
+        }
+
+        // Title is optional but if provided, must be a string
+        if (title !== undefined && (typeof title !== 'string' || title.trim().length < 1)) {
+            return Response.fail(res, 'Title must be a non-empty string', 400);
+        }
+
+        // DocumentId is optional, but if provided, validate it
+        if (documentId !== undefined) {
+            if (isNaN(parseInt(documentId))) {
+                return Response.fail(res, 'Document ID must be a valid number', 400);
+            }
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
 
 // Validation for getting a chat
-const getChatValidation = celebrate({
+export const getChatValidation = (req, res, next) => {
+    try {
+        const { chatId } = req.params;
+        const { page, pageSize } = req.query;
+
+        if (!chatId) {
+            return Response.fail(res, 'Chat ID is required', 400);
+        }
+
+        // Validate page and pageSize if provided
+        if (page !== undefined) {
+            const pageNum = parseInt(page);
+            if (isNaN(pageNum) || pageNum < 1) {
+                return Response.fail(res, 'Page must be a positive number', 400);
+            }
+        }
+
+        if (pageSize !== undefined) {
+            const pageSizeNum = parseInt(pageSize);
+            if (isNaN(pageSizeNum) || pageSizeNum < 1 || pageSizeNum > 100) {
+                return Response.fail(res, 'Page size must be between 1 and 100', 400);
+            }
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
+
+// Validation for listing chats
+export const listChatsValidation = (req, res, next) => {
+    try {
+        const { page, pageSize } = req.query;
+
+        // Validate page and pageSize if provided
+        if (page !== undefined) {
+            const pageNum = parseInt(page);
+            if (isNaN(pageNum) || pageNum < 1) {
+                return Response.fail(res, 'Page must be a positive number', 400);
+            }
+        }
+
+        if (pageSize !== undefined) {
+            const pageSizeNum = parseInt(pageSize);
+            if (isNaN(pageSizeNum) || pageSizeNum < 1 || pageSizeNum > 100) {
+                return Response.fail(res, 'Page size must be between 1 and 100', 400);
+            }
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
+
+// Validation for deleting a chat
+export const deleteChatValidation = (req, res, next) => {
+    try {
+        const { chatId } = req.params;
+
+        if (!chatId) {
+            return Response.fail(res, 'Chat ID is required', 400);
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
+
+// Validation for querying documents
+export const queryDocumentsValidation = (req, res, next) => {
+    try {
+        const { chatId } = req.params;
+        const { query, documentId } = req.body;
+
+        if (!chatId) {
+            return Response.fail(res, 'Chat ID is required', 400);
+        }
+
+        if (!query || typeof query !== 'string' || query.trim().length < 1) {
+            return Response.fail(res, 'Query is required', 400);
+        }
+
+        // Validate documentId if provided
+        if (documentId !== undefined) {
+            if (isNaN(parseInt(documentId))) {
+                return Response.fail(res, 'Document ID must be a valid number', 400);
+            }
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
+
+// Validation for structured query
+export const structuredQueryValidation = (req, res, next) => {
+    try {
+        const { query, documentId } = req.body;
+
+        if (!query || typeof query !== 'object') {
+            return Response.fail(res, 'Query object is required', 400);
+        }
+
+        const { operation, field } = query;
+        if (!operation || !field) {
+            return Response.fail(res, 'Query must contain operation and field', 400);
+        }
+
+        const validOperations = ['sum', 'avg', 'min', 'max', 'count'];
+        if (!validOperations.includes(operation)) {
+            return Response.fail(res, `Operation must be one of: ${validOperations.join(', ')}`, 400);
+        }
+
+        if (typeof field !== 'string' || field.trim().length < 1) {
+            return Response.fail(res, 'Field must be a non-empty string', 400);
+        }
+
+        if (!documentId || isNaN(parseInt(documentId))) {
+            return Response.fail(res, 'Document ID is required and must be a valid number', 400);
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
+
+// Validation for document search
+const searchDocumentValidation = celebrate({
     [Segments.PARAMS]: Joi.object().keys({
-        chatId: Joi.number().required().messages({
-            'any.required': 'Chat ID is required'
+        documentId: Joi.number().integer().required().messages({
+            'any.required': 'Document ID is required',
+            'number.base': 'Document ID must be a number',
+            'number.integer': 'Document ID must be an integer'
         })
     }),
     [Segments.QUERY]: Joi.object().keys({
-        page: Joi.number().min(1).optional(),
-        pageSize: Joi.number().min(1).max(100).optional()
-    })
-});
-
-// Validation for listing chats
-const listChatsValidation = celebrate({
-    [Segments.QUERY]: Joi.object().keys({
-        page: Joi.number().min(1).optional(),
-        pageSize: Joi.number().min(1).max(100).optional()
-    })
-});
-
-// Validation for deleting a chat
-const deleteChatValidation = celebrate({
-    [Segments.PARAMS]: Joi.object().keys({
-        chatId: Joi.number().required().messages({
-            'any.required': 'Chat ID is required'
-        })
-    })
-});
-
-// Validation for querying documents
-const queryDocumentsValidation = celebrate({
-    [Segments.BODY]: Joi.object().keys({
         query: Joi.string().required().messages({
-            'any.required': 'Query is required'
+            'any.required': 'Search query is required'
         }),
-        chatId: Joi.number().optional(),
-        documentId: Joi.number().optional()
-    })
-});
-
-// Validation for structured query
-const structuredQueryValidation = celebrate({
-    [Segments.BODY]: Joi.object().keys({
-        operation: Joi.string().valid('max', 'min', 'sum', 'avg').required().messages({
-            'any.required': 'Operation is required',
-            'any.only': 'Operation must be one of: max, min, sum, avg'
-        }),
-        field: Joi.string().required().messages({
-            'any.required': 'Field is required'
-        }),
-        filter: Joi.object().optional(),
-        documentId: Joi.number().required().messages({
-            'any.required': 'Document ID is required'
+        limit: Joi.number().integer().min(1).max(100).default(10).messages({
+            'number.base': 'Limit must be a number',
+            'number.integer': 'Limit must be an integer',
+            'number.min': 'Limit must be at least 1',
+            'number.max': 'Limit cannot exceed 100'
         })
     })
 });
+
+/**
+ * Validate update chat title request
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+export const updateChatTitleValidation = (req, res, next) => {
+    try {
+        const { chatId } = req.params;
+        const { title } = req.body;
+
+        if (!chatId) {
+            return Response.fail(res, 'Chat ID is required', 400);
+        }
+
+        if (!title || typeof title !== 'string' || title.trim().length < 1) {
+            return Response.fail(res, 'Valid title is required', 400);
+        }
+
+        next();
+    } catch (error) {
+        return Response.fail(res, 'Invalid request parameters', 400);
+    }
+};
 
 // Export the validation middleware
 export {
@@ -168,11 +306,5 @@ export {
     uploadDocumentValidation,
     updateDocumentValidation,
     getDocumentStatusValidation,
-    deleteDocumentValidation,
-    createChatValidation,
-    getChatValidation,
-    listChatsValidation,
-    deleteChatValidation,
-    queryDocumentsValidation,
-    structuredQueryValidation
+    deleteDocumentValidation
 };

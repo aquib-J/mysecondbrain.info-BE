@@ -1,4 +1,4 @@
-class UtilityMethods {
+export class UtilityMethods {
 
     static cleanAndJoinString(str) {
     if (typeof str !== 'string') {
@@ -10,5 +10,3 @@ class UtilityMethods {
     }
     
 }
-
-export default UtilityMethods;

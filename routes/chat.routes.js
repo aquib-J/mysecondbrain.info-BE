@@ -5,7 +5,8 @@ import {
     listChats,
     deleteChat,
     queryDocuments,
-    structuredQuery
+    structuredQuery,
+    updateChatTitle
 } from './controllers/chat.controller.js';
 import {
     createChatValidation,
@@ -13,17 +14,19 @@ import {
     listChatsValidation,
     deleteChatValidation,
     queryDocumentsValidation,
-    structuredQueryValidation
+    structuredQueryValidation,
+    updateChatTitleValidation
 } from '../middlewares/validation.middleware.js';
-
+import { queryRateLimiter } from '../middlewares/rate-limit.middleware.js';
 const chatRoutes = Router();
 
-// Routes
-chatRoutes.post('/', createChatValidation, createChat); // might not be required as queryDocuments will create a chat if it doesn't exist
+// Chat routes - organized per requirements
+chatRoutes.post('/', queryRateLimiter, createChatValidation, createChat);
 chatRoutes.get('/:chatId', getChatValidation, getChat);
-chatRoutes.get('/', listChatsValidation, listChats); // List of all distinct chats for a user
+chatRoutes.get('/', listChatsValidation, listChats);
 chatRoutes.delete('/:chatId', deleteChatValidation, deleteChat);
-chatRoutes.post('/query', queryDocumentsValidation, queryDocuments);
-chatRoutes.post('/structured-query', structuredQueryValidation, structuredQuery);
+chatRoutes.post('/:chatId/query', queryRateLimiter, queryDocumentsValidation, queryDocuments);
+chatRoutes.put('/:chatId/title', updateChatTitleValidation, updateChatTitle);
+chatRoutes.post('/structured-query', queryRateLimiter, structuredQueryValidation, structuredQuery);
 
 export default chatRoutes;
