@@ -61,6 +61,8 @@ class DocumentProcessorService {
             timestamp: new Date().toISOString()
         });
 
+        let tempFiles = [];
+
         try {
             // Validate file exists
             if (!fs.existsSync(filePath)) {
@@ -150,6 +152,7 @@ class DocumentProcessorService {
                         fs.copyFileSync(filePath, tempFilePath);
                         processingFilePath = tempFilePath;
                         tempFile = true;
+                        tempFiles.push(tempFilePath);
                     }
 
                     // Generate output path
@@ -239,27 +242,20 @@ class DocumentProcessorService {
 
                             try {
                                 const outputContent = fs.readFileSync(outputPath, 'utf8');
-                                const chunks = JSON.parse(outputContent);
-
-                                // Clean up temporary file if created
-                                if (tempFile) {
-                                    logger.info('Cleaning up temporary file', { processId, tempFilePath: processingFilePath });
-                                    fs.unlinkSync(processingFilePath);
-                                }
-
-                                return chunks;
+                                chunks = JSON.parse(outputContent);
                             } catch (outputError) {
                                 logger.error('Failed to read output file directly', {
                                     processId,
                                     error: outputError.message
                                 });
+                                throw new Error('Failed to parse document processing result');
                             }
+                        } else {
+                            throw new Error('Failed to parse document processing result');
                         }
-
-                        throw new Error('Failed to parse document processing result');
                     }
 
-                    if (result.status !== 'success') {
+                    if (result && result.status !== 'success') {
                         logger.error('Document processing failed in Python script', {
                             processId,
                             status: result.status,
@@ -268,39 +264,36 @@ class DocumentProcessorService {
                         throw new Error(`Document processing failed: ${result.error || 'Unknown error'}`);
                     }
 
-                    // Read the output JSON file
-                    if (!fs.existsSync(outputPath)) {
-                        logger.error('Output file not created', { processId, outputPath });
-                        throw new Error('Output file not created by Python script');
-                    }
+                    // If we parsed the stdout but didn't get chunks yet, read the output file
+                    if (chunks.length === 0) {
+                        // Read the output JSON file
+                        if (!fs.existsSync(outputPath)) {
+                            logger.error('Output file not created', { processId, outputPath });
+                            throw new Error('Output file not created by Python script');
+                        }
 
-                    logger.info('Reading output JSON file', { processId, outputPath });
-                    const outputContent = fs.readFileSync(outputPath, 'utf8');
+                        logger.info('Reading output JSON file', { processId, outputPath });
+                        const outputContent = fs.readFileSync(outputPath, 'utf8');
 
-                    try {
-                        chunks = JSON.parse(outputContent);
-                    } catch (jsonError) {
-                        logger.error('Failed to parse output JSON', {
-                            processId,
-                            error: jsonError.message,
-                            outputContent: outputContent.substring(0, 500) + (outputContent.length > 500 ? '...' : '')
-                        });
-                        throw new Error('Failed to parse output JSON');
+                        try {
+                            chunks = JSON.parse(outputContent);
+                        } catch (jsonError) {
+                            logger.error('Failed to parse output JSON', {
+                                processId,
+                                error: jsonError.message,
+                                outputContent: outputContent.substring(0, 500) + (outputContent.length > 500 ? '...' : '')
+                            });
+                            throw new Error('Failed to parse output JSON');
+                        }
                     }
 
                     logger.info('Document processing with Python script completed successfully', {
                         processId,
                         chunksCount: chunks.length,
-                        fileSize: fs.statSync(outputPath).size,
+                        fileSize: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
                         executionTimeMs: executionTime,
                         timestamp: new Date().toISOString()
                     });
-
-                    // Clean up temporary file if created
-                    if (tempFile) {
-                        logger.info('Cleaning up temporary file', { processId, tempFilePath: processingFilePath });
-                        fs.unlinkSync(processingFilePath);
-                    }
                 } catch (pyError) {
                     logger.warn('Python script processing failed, falling back to native parsers', {
                         processId,
@@ -331,6 +324,22 @@ class DocumentProcessorService {
             // Return empty chunks array instead of throwing
             // This allows our fallback in job.service.js to create a placeholder chunk
             return [];
+        } finally {
+            // Ensure cleanup happens regardless of success or failure
+            try {
+                // Clean up the original file if it's a temporary file
+                await this.cleanup(filePath);
+
+                // Clean up any additional temporary files created during processing
+                for (const tempFile of tempFiles) {
+                    await this.cleanup(tempFile);
+                }
+            } catch (cleanupError) {
+                logger.warn('Error during final cleanup', {
+                    processId,
+                    error: cleanupError.message
+                });
+            }
         }
     }
 
@@ -373,29 +382,53 @@ class DocumentProcessorService {
      * @returns {Promise<void>}
      */
     async cleanup(filePath) {
-        // If the file is in our docStore, remove it
-        if (filePath && filePath.startsWith(this.docStore) && fs.existsSync(filePath)) {
-            try {
-                fs.unlinkSync(filePath);
-                logger.info('Cleaned up temporary file', { path: filePath });
-            } catch (error) {
-                logger.warn('Error cleaning up temporary file', { error, path: filePath });
-                // Non-fatal error, just log it
-            }
+        if (!filePath) {
+            logger.warn('No file path provided for cleanup');
+            return;
         }
 
-        // Check for any output files based on this filepath
-        const baseName = path.basename(filePath);
-        const outputPath = path.join(this.outputStore, `${baseName}.json`);
+        try {
+            // If the file is in our docStore, remove it
+            if (filePath.startsWith(this.docStore) && fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                logger.info('Cleaned up temporary file', { path: filePath });
+            }
 
-        if (fs.existsSync(outputPath)) {
-            try {
+            // Check for any output files based on this filepath
+            const baseName = path.basename(filePath);
+            const outputPath = path.join(this.outputStore, `${baseName}.json`);
+
+            if (fs.existsSync(outputPath)) {
                 fs.unlinkSync(outputPath);
                 logger.info('Cleaned up output file', { path: outputPath });
-            } catch (error) {
-                logger.warn('Error cleaning up output file', { error, path: outputPath });
-                // Non-fatal error, just log it
             }
+
+            // Check for any temporary files that might have been created during processing
+            const tempPrefix = `temp_${Date.now() - 3600000}`; // Check for files up to 1 hour old
+            const tempDir = this.docStore;
+
+            if (fs.existsSync(tempDir)) {
+                const files = fs.readdirSync(tempDir);
+
+                // Clean up temp files that might have been missed
+                for (const file of files) {
+                    if (file.startsWith('temp_') && file.includes(path.parse(filePath).name)) {
+                        const tempFilePath = path.join(tempDir, file);
+                        try {
+                            fs.unlinkSync(tempFilePath);
+                            logger.info('Cleaned up additional temporary file', { path: tempFilePath });
+                        } catch (error) {
+                            logger.warn('Failed to clean up additional temporary file', {
+                                path: tempFilePath,
+                                error: error.message
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            logger.warn('Error during cleanup', { error: error.message, path: filePath });
+            // Non-fatal error, just log it
         }
     }
 }

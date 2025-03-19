@@ -1,15 +1,26 @@
-
 import Logger from '../utils/Logger.js';
 import openaiService from './openai.service.js';
 import weaviateService from './weaviate/weaviate.service.js';
 import vectorizationService from './vectorization.service.js';
-import { Chat, Document, User } from '../databases/mysql8/db-schemas.js';
+import { Chat, Document, User} from '../databases/mysql8/db-schemas.js';
 import * as uuid from 'uuid';
 import markdownUtils from '../utils/markdown.js';
+import sequelize from '../databases/mysql8/sequelizeConnect.js';
 
 const logger = new Logger();
 
 class ChatService {
+
+    /**
+     * Convert a UUID string to a Buffer
+     * @param {string} uuidString - The UUID string to convert
+     * @returns {Buffer} - The UUID as a Buffer
+     */ //TODO: move this to a utility function along with convertBufferToUuidString
+    convertUuidStringToBuffer(uuidString) {
+        // Remove dashes and convert to Buffer
+        return Buffer.from(uuidString.replace(/-/g, ''), 'hex');
+    }
+
     /**
      * Create a new chat
      * @param {number} userId - User ID
@@ -36,13 +47,20 @@ class ChatService {
                 }
             }
 
+            // Add timestamp to messages if provided
+            const processedMessages = messages.map(msg => ({
+                ...msg,
+                id: msg.id || uuid.v4(),
+                timestamp: msg.timestamp || new Date().toISOString()
+            }));
+
             const chat = await Chat.create({
                 user_id: userId,
                 title,
                 chat_id: uuid.v4(),
                 type,
                 metadata: {},
-                messages,
+                messages: processedMessages,
                 status: 'active'
             });
 
@@ -358,49 +376,26 @@ class ChatService {
         const transaction = await sequelize.transaction();
 
         try {
-            // Check if user has any documents
-            const documentsCount = await Document.count({
-                where: {
-                    uploaded_by: userId,
-                    status: 'active'
-                },
-                transaction
-            });
+            // Verify user has documents
+            await this.verifyUserHasDocuments(userId, transaction);
 
-            if (documentsCount === 0) {
-                await transaction.rollback();
-                logger.warn('User attempted to query with no documents', { userId });
-                throw new Error('No documents found. Please upload at least one document before creating a chat.');
-            }
-
-            // Create chat if not provided
+            // Create or get the chat
             let chat;
             if (!chatId) {
-                // Create new chat with title derived from query
-                chat = await this.createChat(userId, query.substring(0, 50), [], 'user');
+                // Create new chat with user's query as first message
+                chat = await this.createChat(userId, query.substring(0, 50), [{
+                    content: query,
+                    role: 'user',
+                    metadata: { documentId }
+                }], 'user');
                 chatId = chat.chat_id;
-                logger.info('Created new chat for query', { chatId, userId });
+                logger.info('Created new chat with initial message', { chatId, userId });
             } else {
-                // Get the latest chat with this chat_id
-                chat = await Chat.findOne({
-                    where: {
-                        chat_id: chatId,
-                        user_id: userId,
-                        status: 'active'
-                    },
-                    order: [['created_at', 'DESC']],
-                    transaction
-                });
-
-                if (!chat) {
-                    await transaction.rollback();
-                    throw new Error('Chat not found');
-                }
+                // Get existing chat and add user message
+                chat = await this.getChatById(chatId, userId, transaction);
+                await this.addMessage(chatId, query, 'user', { documentId });
+                logger.info('Added user message to existing chat', { chatId, userId });
             }
-
-            // Add user message to chat
-            await this.addMessage(chatId, query, 'user', { documentId });
-            logger.info('Added user message to chat', { chatId, userId });
 
             // Search for similar content
             const searchOptions = {
@@ -410,70 +405,27 @@ class ChatService {
 
             // If documentId is provided, filter by document
             if (documentId) {
-                // Verify document exists and belongs to user
-                const document = await Document.findOne({
-                    where: {
-                        id: documentId,
-                        uploaded_by: userId,
-                        status: 'active'
-                    },
-                    transaction
-                });
-
-                if (!document) {
-                    await transaction.rollback();
-                    throw new Error('Document not found');
-                }
-
+                await this.verifyDocumentExists(documentId, userId, transaction);
                 searchOptions.documentId = documentId;
                 logger.info('Searching within specific document', { documentId, chatId });
             } else {
                 logger.info('Searching across all user documents', { chatId });
             }
 
-            // Search in both document and JSON document classes using vectorizationService
-            let documentResults = [];
-            let jsonResults = [];
+            // Get embedding for the query once and reuse it
+            const queryEmbedding = await openaiService.createSingleEmbedding(query);
+            logger.info('Created embedding for query', { chatId, queryLength: query.length });
 
-            try {
-                documentResults = await vectorizationService.semanticSearch(
-                    query,
-                    { ...searchOptions, className: 'Document' }
-                );
-            } catch (error) {
-                logger.warn('Error searching Document class', { error: error.message, chatId });
-                // Continue with empty results
-            }
-
-            try {
-                jsonResults = await vectorizationService.semanticSearch(
-                    query,
-                    { ...searchOptions, className: 'JsonDocument' }
-                );
-            } catch (error) {
-                logger.warn('Error searching JsonDocument class', { error: error.message, chatId });
-                // Continue with empty results
-            }
-
-            // Combine and sort results by distance
-            const combinedResults = [...documentResults, ...jsonResults]
-                .sort((a, b) => a._additional?.distance - b._additional?.distance)
-                .slice(0, 5);
+            // Search in both document and JSON document classes using the same embedding
+            let combinedResults = await this.performCombinedSearch(queryEmbedding, searchOptions);
 
             // If no results found
             if (combinedResults.length === 0) {
-                const noResultsResponse = "I couldn't find any relevant information in your documents to answer this question. This could be because the documents are still being processed or don't contain information related to your query.";
-                await this.addMessage(chatId, noResultsResponse, 'system', { sources: [] });
-
-                await transaction.commit();
-                logger.info('No relevant documents found', { chatId });
-
-                return {
-                    answer: noResultsResponse,
-                    sources: [],
-                    chatId
-                };
+                return await this.handleNoResults(chatId, transaction);
             }
+
+            // Enhance results with actual content from DB if needed
+            combinedResults = await this.enhanceResultsWithContent(combinedResults, userId);
 
             // Generate answer using OpenAI with markdown instruction
             const answer = await openaiService.queryWithContext(
@@ -483,18 +435,7 @@ class ChatService {
             );
 
             // Prepare sources information
-            const sources = combinedResults.map(result => {
-                const metadata = typeof result.metadata === 'string'
-                    ? JSON.parse(result.metadata || '{}')
-                    : (result.metadata || {});
-
-                return {
-                    text: result.text_content || result.text,
-                    documentId: result.documentId || metadata.documentId,
-                    pageNumber: result.pageNumber || metadata.pageNumber || 0,
-                    distance: result._additional?.distance
-                };
-            });
+            const sources = this.prepareSources(combinedResults);
 
             // Add assistant message to chat
             await this.addMessage(chatId, answer, 'system', { sources });
@@ -512,6 +453,216 @@ class ChatService {
             logger.error('Error querying documents', { error, userId, query });
             throw error;
         }
+    }
+
+    /**
+     * Verify user has uploaded documents
+     * @param {number} userId - User ID
+     * @param {Transaction} transaction - Sequelize transaction
+     * @private
+     */
+    async verifyUserHasDocuments(userId, transaction) {
+        const documentsCount = await Document.count({
+            where: {
+                uploaded_by: userId,
+                status: 'active'
+            },
+            transaction
+        });
+
+        if (documentsCount === 0) {
+            logger.warn('User attempted to query with no documents', { userId });
+            throw new Error('No documents found. Please upload at least one document before creating a chat.');
+        }
+    }
+
+    /**
+     * Verify document exists and belongs to user
+     * @param {number} documentId - Document ID
+     * @param {number} userId - User ID
+     * @param {Transaction} transaction - Sequelize transaction
+     * @private
+     */
+    async verifyDocumentExists(documentId, userId, transaction) {
+        const document = await Document.findOne({
+            where: {
+                id: documentId,
+                uploaded_by: userId,
+                status: 'active'
+            },
+            transaction
+        });
+
+        if (!document) {
+            throw new Error('Document not found');
+        }
+
+        return document;
+    }
+
+    /**
+     * Get chat by ID
+     * @param {string} chatId - Chat ID
+     * @param {number} userId - User ID
+     * @param {Transaction} transaction - Sequelize transaction
+     * @private
+     */
+    async getChatById(chatId, userId, transaction) {
+        const chat = await Chat.findOne({
+            where: {
+                chat_id: chatId,
+                user_id: userId,
+                status: 'active'
+            },
+            order: [['created_at', 'DESC']],
+            transaction
+        });
+
+        if (!chat) {
+            throw new Error('Chat not found');
+        }
+
+        return chat;
+    }
+
+    /**
+     * Perform combined search across Document and JsonDocument classes
+     * @param {Array} queryEmbedding - Query embedding vector
+     * @param {Object} searchOptions - Search options
+     * @returns {Promise<Array>} - Combined search results
+     * @private
+     */
+    async performCombinedSearch(queryEmbedding, searchOptions) {
+        let documentResults = [];
+        let jsonResults = [];
+
+        // Use the embedding directly for both searches to avoid creating it twice
+        try {
+            documentResults = await vectorizationService.semanticSearchWithEmbedding(
+                queryEmbedding,
+                { ...searchOptions, className: 'Document' }
+            );
+        } catch (error) {
+            logger.warn('Error searching Document class', { error: error.message });
+            // Continue with empty results
+        }
+
+        try {
+            jsonResults = await vectorizationService.semanticSearchWithEmbedding(
+                queryEmbedding,
+                { ...searchOptions, className: 'JsonDocument' }
+            );
+        } catch (error) {
+            logger.warn('Error searching JsonDocument class', { error: error.message });
+            // Continue with empty results
+        }
+
+        // Combine and sort results by distance
+        return [...documentResults, ...jsonResults]
+            .sort((a, b) => a._additional?.distance - b._additional?.distance)
+            .slice(0, 5);
+    }
+
+    /**
+     * Handle the case when no results are found
+     * @param {string} chatId - Chat ID
+     * @param {Transaction} transaction - Sequelize transaction
+     * @returns {Promise<Object>} - Response object
+     * @private
+     */
+    async handleNoResults(chatId, transaction) {
+        const noResultsResponse = "I couldn't find any relevant information in your documents to answer this question. This could be because the documents are still being processed or don't contain information related to your query.";
+        await this.addMessage(chatId, noResultsResponse, 'system', { sources: [] });
+
+        await transaction.commit();
+        logger.info('No relevant documents found', { chatId });
+
+        return {
+            answer: noResultsResponse,
+            sources: [],
+            chatId
+        };
+    }
+
+    /**
+     * Enhance search results with actual content from database if needed
+     * @param {Array} results - Search results
+     * @param {number} userId - User ID
+     * @returns {Promise<Array>} - Enhanced results
+     * @private
+     */
+    //TODO: prepare all the results in enhancedResults and then do a bulk query to get the text_content of the items.
+    async enhanceResultsWithContent(results, userId) {
+        const enhancedResults = [];
+
+        for (const result of results) {
+            let enhancedResult = { ...result };
+
+            // If the text content is missing or placeholder, fetch from DB
+            if (!result.text_content) {
+                try {
+                    const metadata = typeof result.metadata === 'string'
+                        ? JSON.parse(result.metadata || '{}')
+                        : (result.metadata || {});
+
+                    const documentId = result.documentId || metadata.documentId;
+                    let  vectorId = result.vectorId || metadata.vectorId || result.id;
+
+                    vectorId=this.convertUuidStringToBuffer(vectorId);
+
+                    if(documentId && vectorId) {
+                        const [{ text_content }] = await sequelize.query(`
+                            SELECT v.text_content FROM vectors v
+                                JOIN jobs j ON v.job_id = j.id
+                                JOIN documents d ON j.doc_id = d.id
+                             WHERE v.vector_id= :vectorId
+                                AND v.is_active = true
+                                AND v.status = 'success'
+                                AND d.id = :documentId
+                                AND d.uploaded_by = :userId
+                                AND d.status = 'active'
+                        `,{
+                            type: sequelize.QueryTypes.SELECT,
+                            replacements: { vectorId, documentId, userId }
+                        });
+
+                        if (text_content) {
+                            enhancedResult.text_content = text_content;
+                            logger.info('Enhanced result with vector content', { documentId, vectorId });
+                        } 
+                    }
+                } catch (error) {
+                    logger.warn('Error enhancing result with vector content', { error: error.message });
+                    // Keep the original result if enhancement fails
+                }
+            }
+
+            enhancedResults.push(enhancedResult);
+        }
+
+        return enhancedResults;
+    }
+
+    /**
+     * Prepare sources information from search results
+     * @param {Array} results - Search results
+     * @returns {Array} - Source information
+     * @private
+     */
+    prepareSources(results) {
+        return results.map(result => {
+            const metadata = typeof result.metadata === 'string'
+                ? JSON.parse(result.metadata || '{}')
+                : (result.metadata || {});
+
+            return {
+                text: result.text_content || result.text,
+                documentId: result.documentId || metadata.documentId,
+                pageNumber: result.pageNumber || metadata.pageNumber || 0,
+                vectorId: result.vectorId || metadata.vectorId || result.id,
+                distance: result._additional?.distance
+            };
+        });
     }
 
     /**

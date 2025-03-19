@@ -336,6 +336,27 @@ class VectorizationService {
             throw error;
         }
     }
+
+    /**
+     * Search using a pre-computed embedding vector
+     * @param {Array} embedding - Pre-computed embedding vector
+     * @param {Object} options - Search options
+     * @returns {Promise<Array>} - Search results
+     */
+    async semanticSearchWithEmbedding(embedding, options) {
+        try {
+            logger.info('Performing semantic search with provided embedding', {
+                className: options.className
+            });
+            return await weaviateService.similaritySearch(embedding, options);
+        } catch (error) {
+            logger.error('Error performing semantic search with embedding', {
+                error: error.message,
+                className: options.className
+            });
+            throw error;
+        }
+    }
 }
 
 export default new VectorizationService(); 

@@ -154,10 +154,22 @@ ALTER TABLE vectors ADD COLUMN metadata JSON DEFAULT NULL AFTER embedding;
 
 SELECT CONSTRAINT_NAME INTO @constraint_name
 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-WHERE TABLE_NAME = 'users' AND CONSTRAINT_TYPE = 'username';
+WHERE TABLE_NAME = 'users' AND CONSTRAINT_TYPE = 'UNIQUE';
 
 -- Step 2: Drop the existing UNIQUE constraint
 SET @drop_constraint_query = CONCAT('ALTER TABLE users DROP INDEX ', @constraint_name);
+PREPARE drop_stmt FROM @drop_constraint_query;
+EXECUTE drop_stmt;
+DEALLOCATE PREPARE drop_stmt;
+
+-- Drop unique constraint on Chats.chat_id
+
+SELECT CONSTRAINT_NAME INTO @constraint_name
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+WHERE TABLE_NAME = 'chats' AND CONSTRAINT_TYPE = 'UNIQUE';
+
+-- Step 2: Drop the existing UNIQUE constraint
+SET @drop_constraint_query = CONCAT('ALTER TABLE chats DROP INDEX ', @constraint_name);
 PREPARE drop_stmt FROM @drop_constraint_query;
 EXECUTE drop_stmt;
 DEALLOCATE PREPARE drop_stmt;
