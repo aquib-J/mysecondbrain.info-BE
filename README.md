@@ -1,5 +1,7 @@
 [![Deploy to DigitalOcean](https://github.com/aquib-J/mysecondbrain.info-BE/actions/workflows/deploy.yml/badge.svg)](https://github.com/aquib-J/mysecondbrain.info-BE/actions/workflows/deploy.yml)
 
+[![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%203.svg)](https://www.digitalocean.com/?refcode=c51852fd64c7&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
+
 # MySecondBrain.info
 
 A Retrieval Augmented Generation (RAG) system hosted at [https://mysecondbrain.info](https://mysecondbrain.info) that leverages Weaviate as its vector database to efficiently retrieve answers from uploaded documents in various formats.
