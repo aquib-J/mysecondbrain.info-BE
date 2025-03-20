@@ -12,9 +12,9 @@ jobs:
       - name: Deploy to DigitalOcean Droplet
         uses: appleboy/ssh-action@v0.1.10
         with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USERNAME }}
-          key: ${{ secrets.DO_SSH_KEY }}
+          host: ${{secrets.DO_HOST}}
+          username: ${{secrets.DO_USERNAME}}
+          key: ${{secrets.DO_SSH_KEY}}
           script: |
             # Navigate to the application directory
             cd ~/mysecondbrain.info-BE
