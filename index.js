@@ -17,7 +17,8 @@ import appRoute from './routes/app.routes.js';
 import { initializeDatabase } from './databases/mysql8/sequelizeConnect.js';
 import { setupSwagger } from './swagger.js';
 import * as uuid from 'uuid';
-import './cron/job.processor.cron.js'; // Initialize cron jobs
+// Import centralized cron job manager
+import { startAllCronJobs, stopAllCronJobs } from './cron/index.js';
 import { globalRateLimiter } from './middlewares/rate-limit.middleware.js';
 
 const logger = new Logger();
@@ -87,10 +88,39 @@ app.use((err, req, res, next) => {
 // Initialize database connection
 await initializeDatabase();
 
-app.listen(PORT, () => {
+// Start all cron jobs
+startAllCronJobs();
+
+// Start HTTP server and store server instance
+const server = app.listen(PORT, () => {
     logger.info(`Application running on PORT ${PORT}`);
     logger.info(`API Documentation available at http://localhost:${PORT}/api-docs`);
     logger.info(`API Documentation JSON collection available at http://localhost:${PORT}/api-docs.json`);
 });
+
+// Graceful shutdown handler
+function gracefulShutdown() {
+    logger.info('Graceful shutdown initiated');
+
+    // Stop all cron jobs
+    stopAllCronJobs();
+
+    // Close HTTP server
+    server.close(() => {
+        logger.info('HTTP server closed');
+        logger.info('Exiting process');
+        process.exit(0);
+    });
+
+    // Force shutdown after timeout
+    setTimeout(() => {
+        logger.error('Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+    }, 5000);
+}
+
+// Register signal handlers
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 export default app;

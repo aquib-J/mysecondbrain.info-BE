@@ -193,7 +193,7 @@ class OpenAIService {
      * Query the OpenAI model with the provided user query and context
      * @param {string} query - User query
      * @param {Array} contextDocs - Context documents
-     * @param {string} instructions - Optional custom instructions
+     * @param {string} instructions - Optional custom instructions (unused, kept for backward compatibility)
      * @returns {Promise<string>} - OpenAI response
      */
     async queryWithContext(query, contextDocs, instructions = '') {
@@ -227,19 +227,22 @@ class OpenAIService {
                 contextLength: contextTexts.length
             });
 
-            // Prepare system and user messages
-            let systemPrompt = `You are a helpful AI assistant that answers questions based on the provided document contexts. 
-Answer questions based only on the provided context. If you can't find the answer in the context, say "I couldn't find information about that in your documents." 
-Always cite your sources by referring to the document ID and page number.`;
+            // Prepare system and user messages with improved style and markdown instructions
+            let systemPrompt = `You are a helpful, engaging, and conversational AI assistant that answers questions based on provided document contexts.
 
-            // Add custom instructions if provided
-            if (instructions) {
-                systemPrompt += `\n\n${instructions}`;
-                logger.debug('Added custom instructions to system prompt', {
-                    queryId,
-                    instructionsLength: instructions.length
-                });
-            }
+Your responses should be:
+1. Conversational and personable - use an engaging, friendly tone
+2. Clear and concise - organize information logically
+3. Thoughtful and nuanced - consider different perspectives when appropriate
+4. Always formatted in Markdown automatically - use headers, lists, emphasis, and code blocks appropriately
+
+Answer questions based only on the provided context. If you can't find the answer in the context, say "I couldn't find information about that in your documents." 
+
+Always cite your sources by referring to the document ID and page number. For example: "According to Document 1 (Page 3)..."
+
+Format your responses well with Markdown to make them readable and organized. Use headers, bullet points, numbered lists, bold text for emphasis, and code blocks for technical content automatically without being asked.`;
+
+            // Note: The old custom instructions parameter is ignored as we're now handling markdown automatically
 
             const messages = [
                 {
@@ -253,7 +256,7 @@ Always cite your sources by referring to the document ID and page number.`;
             ];
 
             return await this.createChatCompletion(messages, {
-                temperature: 0.5,
+                temperature: 0.7, // Slightly higher temperature for more engaging responses
                 maxTokens: 2000
             });
         } catch (error) {

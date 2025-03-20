@@ -10,6 +10,10 @@ const environment = process.env.NODE_ENV || 'development';
 const envFile = environment === 'development' ? '.env.development' : '.env.production';
 config({ path: path.join(__dirname, '..', envFile) });
 
+// Define defaults for JWT expiration
+const DEFAULT_JWT_EXPIRES_IN = '24h'; // 1 day for access token
+const DEFAULT_JWT_REFRESH_EXPIRES_IN = '7d'; // 7 days for refresh token
+
 // Export environment variables with defaults for all required variables
 export const {
     AWS_ACCESS_KEY_ID,
@@ -17,8 +21,8 @@ export const {
     AWS_REGION,
     AWS_S3_BUCKET_NAME,
     JWT_SECRET,
-    JWT_EXPIRES_IN,
-    JWT_REFRESH_EXPIRES_IN,
+    JWT_EXPIRES_IN = DEFAULT_JWT_EXPIRES_IN,
+    JWT_REFRESH_EXPIRES_IN = DEFAULT_JWT_REFRESH_EXPIRES_IN,
     NODE_ENV = 'development',
     PORT = 3500,
     ARCJET_KEY,
@@ -37,8 +41,12 @@ export const {
     EMAIL_USER,
     EMAIL_PASSWORD,
     EMAIL_FROM,
-    SEND_EMAILS
+    SEND_EMAILS,
+    ADMIN_PASS
 } = process.env;
+
+// Ensure JWT expiration values are valid
+console.log(`Access token expiry: ${JWT_EXPIRES_IN}, Refresh token expiry: ${JWT_REFRESH_EXPIRES_IN}`);
 
 // Add validation
 if (!DB_URI) throw new Error('DB_URI environment variable is required');

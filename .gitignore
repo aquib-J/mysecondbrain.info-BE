@@ -139,10 +139,12 @@ requirements/
 
 # Doc-store
 doc-store/
+output-store/
 
 
 # Tests
 to-not-commit/
 
-output-store/
-doc-store/
+
+
+backup/scripts/

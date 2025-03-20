@@ -1,9 +1,20 @@
 import winston from 'winston';
 import { SERVICE_NAME, LOG_LEVEL } from '../config/env.js';
 import { AsyncLocalStorage } from 'async_hooks';
+import path from 'path';
+import fs from 'fs';
+import 'winston-daily-rotate-file';
 
 // Create async local storage to hold request context
 export const requestContext = new AsyncLocalStorage();
+
+// Define log directory
+const LOG_DIR = path.resolve(process.cwd(), 'logs');
+
+// Create logs directory if it doesn't exist
+if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+}
 
 let LoggerInstance = null;
 
@@ -35,14 +46,55 @@ export default class Logger {
             trace: 'white',
         };
 
+        // Define custom format
+        const customFormat = winston.format.combine(
+            winston.format.timestamp({
+                format: 'YYYY-MM-DD HH:mm:ss',
+            }),
+            winston.format.errors({ stack: true }),
+            winston.format.splat(),
+            winston.format.json(),
+            winston.format.printf(
+                (info) =>
+                    `@${info.timestamp} - ${info.level}: ${info.message} ${this.stringifyExtraMessageProperties(info)}`,
+            ),
+        );
+
         // Add default transports if none are provided
         if (transports.length === 0) {
+            // Console transport
             transports.push(
                 new winston.transports.Console({
                     format: winston.format.combine(
                         winston.format.colorize(),
                         winston.format.simple(),
                     ),
+                }),
+            );
+
+            // Rotating file transport for all logs
+            transports.push(
+                new winston.transports.DailyRotateFile({
+                    filename: path.join(LOG_DIR, 'combined-%DATE%.log'),
+                    datePattern: 'YYYY-MM-DD',
+                    maxSize: '20m',  // Rotate if file size exceeds 20MB
+                    maxFiles: '14d', // Keep logs for 14 days
+                    format: customFormat,
+                    level: 'debug',  // Capture all logs
+                    zippedArchive: true
+                }),
+            );
+
+            // Separate rotating file transport for errors
+            transports.push(
+                new winston.transports.DailyRotateFile({
+                    filename: path.join(LOG_DIR, 'error-%DATE%.log'),
+                    datePattern: 'YYYY-MM-DD',
+                    maxSize: '20m',
+                    maxFiles: '30d', // Keep error logs longer (30 days)
+                    format: customFormat,
+                    level: 'error',
+                    zippedArchive: true
                 }),
             );
         }
@@ -52,6 +104,9 @@ export default class Logger {
             defaultMeta.service = SERVICE_NAME;
         }
 
+        // Add environment to metadata
+        defaultMeta.environment = process.env.NODE_ENV || 'development';
+
         // Add colors to winston
         winston.addColors(loggerColors);
 
@@ -59,18 +114,7 @@ export default class Logger {
         LoggerInstance = winston.createLogger({
             level: level,
             levels: loggerLevels,
-            format: winston.format.combine(
-                winston.format.timestamp({
-                    format: 'YYYY-MM-DD HH:mm:ss',
-                }),
-                winston.format.errors({ stack: true }),
-                winston.format.splat(),
-                winston.format.json(),
-                winston.format.printf(
-                    (info) =>
-                        `@${info.timestamp} - ${info.level}: ${info.message} ${this.stringifyExtraMessageProperties(info)}`,
-                ),
-            ),
+            format: customFormat,
             transports,
             defaultMeta,
         });

@@ -3,17 +3,109 @@ import { MemoryStore } from 'express-rate-limit';
 import { StatusCodes } from 'http-status-codes';
 import Logger from '../utils/Logger.js';
 import Response from '../utils/Response.js';
-import { USE_REDIS } from '../config/env.js';
+import { USE_REDIS, NODE_ENV } from '../config/env.js';
 import redisConnect from '../databases/redis/redisConnect.js';
 
 const logger = new Logger();
 
-// Create in-memory store by default (for development environments)
+/**
+ * Redis store implementation for express-rate-limit
+ */
+class RedisStore {
+    constructor(windowMs) {
+        this.client = redisConnect;
+        this.prefix = 'rl:';
+        this.windowMs = windowMs || 60 * 1000; // Default to 1 minute if not provided
+    }
+
+    /**
+     * Increment key and get count
+     * @param {string} key - The key to increment
+     * @param {Object} options - Options object
+     * @returns {Promise<Object>} - The incremented count and TTL
+     */
+    async increment(key) {
+        const redisKey = this.prefix + key;
+
+        try {
+            // Increment key
+            const count = await this.client.incr(redisKey);
+
+            // Set expiry if first hit
+            if (count === 1) {
+                await this.client.expire(redisKey, Math.ceil(this.windowMs / 1000));
+            }
+
+            // Get remaining TTL
+            const ttl = await this.client.ttl(redisKey);
+
+            return {
+                totalHits: count,
+                resetTime: Date.now() + (ttl * 1000)
+            };
+        } catch (err) {
+            logger.error('Redis store error on increment', { key, error: err.message });
+            // Fallback to success in case of Redis error
+            return { totalHits: 0, resetTime: Date.now() };
+        }
+    }
+
+    /**
+     * Decrement key
+     * @param {string} key - The key to decrement
+     * @returns {Promise<void>}
+     */
+    async decrement(key) {
+        const redisKey = this.prefix + key;
+        try {
+            const count = await this.client.get(redisKey);
+            if (count && parseInt(count) > 0) {
+                await this.client.decr(redisKey);
+            }
+        } catch (err) {
+            logger.error('Redis store error on decrement', { key, error: err.message });
+        }
+    }
+
+    /**
+     * Reset key
+     * @param {string} key - The key to reset
+     * @returns {Promise<void>}
+     */
+    async resetKey(key) {
+        const redisKey = this.prefix + key;
+        try {
+            await this.client.del(redisKey);
+        } catch (err) {
+            logger.error('Redis store error on reset', { key, error: err.message });
+        }
+    }
+
+    /**
+     * Reset all keys (not implemented for Redis)
+     * @returns {Promise<void>}
+     */
+    async resetAll() {
+        logger.warn('resetAll called on Redis store - operation not supported');
+    }
+}
+
+// Create appropriate store based on environment
 const createLimiter = (options) => {
-    // const store = USE_REDIS === 'true' ? redisConnect : new MemoryStore();
-    const store = new MemoryStore();
+    const windowMs = options.windowMs || 60 * 1000; // Default: 1 minute
+    let store;
+
+    // Use Redis in production, memory in development
+    if (USE_REDIS === 'true' && NODE_ENV === 'production') {
+        store = new RedisStore(windowMs);
+        logger.info('Using Redis store for rate limiting');
+    } else {
+        store = new MemoryStore();
+        logger.info('Using in-memory store for rate limiting');
+    }
+
     const baseConfig = {
-        windowMs: options.windowMs,
+        windowMs: windowMs,
         max: options.max,
         standardHeaders: true,
         legacyHeaders: false,
@@ -28,7 +120,7 @@ const createLimiter = (options) => {
     logger.info(`Rate limiter created`, {
         windowMs: options.windowMs,
         max: options.max,
-        storeType: USE_REDIS === 'true' ? 'redis' : 'memory',
+        storeType: USE_REDIS === 'true' && NODE_ENV === 'production' ? 'redis' : 'memory',
         limitType: options.limitType || 'general'
     });
 

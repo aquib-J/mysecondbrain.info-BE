@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import Logger from '../utils/Logger.js';
 import { welcomeEmailTemplate } from '../utils/email.templates.js';
+import { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD, NODE_ENV } from '../config/env.js';
 
 const logger = new Logger();
 
@@ -18,7 +19,6 @@ class EmailService {
      */
     initialize() {
         try {
-            const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD, NODE_ENV } = process.env;
 
             // If testing/development environment, use ethereal test account
             if (NODE_ENV !== 'production') {
@@ -95,7 +95,7 @@ class EmailService {
 
             const info = await this.transporter.sendMail(mailOptions);
 
-            if (process.env.NODE_ENV !== 'production') {
+            if (NODE_ENV !== 'production') {
                 logger.info('Preview URL for test email:', {
                     previewUrl: nodemailer.getTestMessageUrl(info),
                 });
@@ -133,7 +133,7 @@ class EmailService {
 
             const info = await this.transporter.sendMail(mailOptions);
 
-            if (process.env.NODE_ENV !== 'production') {
+            if (NODE_ENV !== 'production') {
                 logger.info('Preview URL for test email:', {
                     previewUrl: nodemailer.getTestMessageUrl(info),
                 });

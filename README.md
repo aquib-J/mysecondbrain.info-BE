@@ -46,6 +46,7 @@ mysecondbrain.info-BE/
 │   ├── redis/              # Redis connection for caching and rate limiting
 │   └── weaviate/           # Weaviate vector database
 ├── doc-store/              # Temporary document storage
+├── docs/                   # System documentation
 ├── middlewares/            # Express middlewares
 ├── routes/                 # API routes
 │   └── controllers/        # Route controllers
@@ -185,6 +186,8 @@ This is the main business logic layer that uses the other modules:
 
 Create a `.env.development` file with the variables specified in the `.env.sample` file.
 
+For a complete list of all environment variables and their configurations, see [Environment Variables Documentation](./docs/env-variables.md).
+
 ### Installation
 
 1. Clone the repository:
@@ -216,6 +219,35 @@ Create a `.env.development` file with the variables specified in the `.env.sampl
    ```
    npm run start:dev
    ```
+
+## For System Maintenance
+
+If you're setting up or managing the system, start with:
+
+1. Review the environment variables documentation to ensure proper configuration
+2. Set up log archiving for production deployments to ensure data retention
+
+
+## Detailed Documentation Files
+
+| Document | Description |
+|----------|-------------|
+| [Environment Variables](./env-variables.md) | Complete list of all environment variables used by the system, their defaults, and which ones are required. |
+| [Log Archiving](./log-archiving.md) | Detailed guide on the log archiving system, including AWS S3 configuration, scheduling, and monitoring. |
+
+
+
+## Contributing to Documentation
+
+When adding new features to the system, please update the main README.md file and add detailed documentation here as needed.
+
+Documentation should be written in Markdown format and follow these guidelines:
+
+- Use clear, concise language
+- Include code examples when relevant
+- Provide troubleshooting tips where appropriate
+- Link to related documentation when applicable 
+
 
 ## License
 

@@ -39,6 +39,8 @@ const jobProcessorCron = cron.schedule(jobProcessorSchedule, async () => {
             timestamp: new Date().toISOString()
         });
     }
+}, {
+    scheduled: false // Don't start automatically - will be managed by index.js
 });
 
 // Initialize cleanup cron job
@@ -67,19 +69,18 @@ const cleanupCron = cron.schedule(cleanupSchedule, async () => {
             timestamp: new Date().toISOString()
         });
     }
+}, {
+    scheduled: false // Don't start automatically - will be managed by index.js
 });
 
-// Start the cron jobs
-jobProcessorCron.start();
-cleanupCron.start();
-
-logger.info('Job processor cron job initialized', {
+// Log configuration but don't start jobs (they'll be started by the index)
+logger.info('Job processor cron job configured', {
     schedule: jobProcessorSchedule,
     type: 'job-processor',
     timestamp: new Date().toISOString()
 });
 
-logger.info('Cleanup cron job initialized', {
+logger.info('Cleanup cron job configured', {
     schedule: cleanupSchedule,
     type: 'cleanup',
     threshold: `${CleanUpDaysThreshold} days`,
@@ -87,4 +88,4 @@ logger.info('Cleanup cron job initialized', {
 });
 
 export { jobProcessorCron, cleanupCron };
-export default jobProcessorCron; 
+export default { jobProcessorCron, cleanupCron }; 

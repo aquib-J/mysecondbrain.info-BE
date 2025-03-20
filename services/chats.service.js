@@ -2,10 +2,11 @@ import Logger from '../utils/Logger.js';
 import openaiService from './openai.service.js';
 import weaviateService from './weaviate/weaviate.service.js';
 import vectorizationService from './vectorization.service.js';
-import { Chat, Document, User} from '../databases/mysql8/db-schemas.js';
+import { Chat, Document, User } from '../databases/mysql8/db-schemas.js';
 import * as uuid from 'uuid';
 import markdownUtils from '../utils/markdown.js';
 import sequelize from '../databases/mysql8/sequelizeConnect.js';
+import { Buffer } from 'buffer';
 
 const logger = new Logger();
 
@@ -148,7 +149,8 @@ class ChatService {
             const offset = (page - 1) * pageSize;
 
             // Use raw query to get the most recent chat for each chat_id
-            const [distinctChats, metadata] = await sequelize.query(`
+            // eslint-disable-next-line no-unused-vars
+            const distinctChats = await sequelize.query(`
                 SELECT c.*
                 FROM chats c
                 INNER JOIN (
@@ -166,7 +168,7 @@ class ChatService {
                     limit: pageSize,
                     offset
                 },
-                type: sequelize.QueryTypes.SELECT
+                type: sequelize.QueryTypes.SELECT,
             });
 
             // Count total distinct chat_ids for pagination
@@ -359,15 +361,15 @@ class ChatService {
 
             return newMessage;
         } catch (error) {
-            logger.error('Error adding message to chat', { error, chatId });
+            logger.error('Error adding message to chat', { error: error.message, chatId });
             throw error;
         }
     }
 
     /**
      * Query documents and get an answer
-     * @param {string} query - User query
      * @param {number} userId - User ID
+     * @param {string} query - User query
      * @param {string} chatId - Chat ID (UUID)
      * @param {number} documentId - Document ID (optional)
      * @returns {Promise<Object>}
@@ -427,17 +429,13 @@ class ChatService {
             // Enhance results with actual content from DB if needed
             combinedResults = await this.enhanceResultsWithContent(combinedResults, userId);
 
-            // Generate answer using OpenAI with markdown instruction
-            const answer = await openaiService.queryWithContext(
-                query,
-                combinedResults,
-                markdownUtils.getMarkdownInstructionPrompt()
-            );
+            // Generate answer using OpenAI (openaiService now handles markdown automatically)
+            const answer = await openaiService.queryWithContext(query, combinedResults);
 
             // Prepare sources information
             const sources = this.prepareSources(combinedResults);
 
-            // Add assistant message to chat
+            // Add assistant message to chat (addMessage method now handles serialization)
             await this.addMessage(chatId, answer, 'system', { sources });
             logger.info('Added system response to chat', { chatId, sourcesCount: sources.length });
 
@@ -450,7 +448,7 @@ class ChatService {
             };
         } catch (error) {
             await transaction.rollback();
-            logger.error('Error querying documents', { error, userId, query });
+            logger.error('Error querying documents', { error: error.message, userId, query });
             throw error;
         }
     }
@@ -606,11 +604,11 @@ class ChatService {
                         : (result.metadata || {});
 
                     const documentId = result.documentId || metadata.documentId;
-                    let  vectorId = result.vectorId || metadata.vectorId || result.id;
+                    let vectorId = result.vectorId || metadata.vectorId || result.id;
 
-                    vectorId=this.convertUuidStringToBuffer(vectorId);
+                    vectorId = this.convertUuidStringToBuffer(vectorId);
 
-                    if(documentId && vectorId) {
+                    if (documentId && vectorId) {
                         const [{ text_content }] = await sequelize.query(`
                             SELECT v.text_content FROM vectors v
                                 JOIN jobs j ON v.job_id = j.id
@@ -621,7 +619,7 @@ class ChatService {
                                 AND d.id = :documentId
                                 AND d.uploaded_by = :userId
                                 AND d.status = 'active'
-                        `,{
+                        `, {
                             type: sequelize.QueryTypes.SELECT,
                             replacements: { vectorId, documentId, userId }
                         });
@@ -629,7 +627,7 @@ class ChatService {
                         if (text_content) {
                             enhancedResult.text_content = text_content;
                             logger.info('Enhanced result with vector content', { documentId, vectorId });
-                        } 
+                        }
                     }
                 } catch (error) {
                     logger.warn('Error enhancing result with vector content', { error: error.message });
@@ -656,7 +654,7 @@ class ChatService {
                 : (result.metadata || {});
 
             return {
-                text: result.text_content || result.text,
+                text: result.text_content || result.text, //TODO: apply markdown deserialize here
                 documentId: result.documentId || metadata.documentId,
                 pageNumber: result.pageNumber || metadata.pageNumber || 0,
                 vectorId: result.vectorId || metadata.vectorId || result.id,
@@ -849,6 +847,59 @@ class ChatService {
             });
         } catch (error) {
             logger.error('Error searching document', { error, documentId, userId });
+            throw error;
+        }
+    }
+
+    /**
+     * Get messages for a chat (properly deserialized)
+     * @param {string} chatId - Chat ID 
+     * @param {string} userId - User ID
+     * @returns {Promise<Array>} - Chat messages
+     */
+    async getMessages(chatId, userId) {
+        try {
+            // Find all chats with this chat_id, ordered by created_at
+            const chats = await Chat.findAll({
+                where: {
+                    chat_id: chatId,
+                    user_id: userId,
+                    status: 'active'
+                },
+                order: [['created_at', 'ASC']]
+            });
+
+            if (chats.length === 0) {
+                throw new Error('Chat not found');
+            }
+
+            // Extract and flatten all messages from all chat entries
+            const allMessages = [];
+
+            for (const chat of chats) {
+                if (chat.messages && Array.isArray(chat.messages)) {
+                    // Deserialize markdown content in messages
+                    const deserializedMessages = chat.messages.map(msg => ({
+                        id: msg.id,
+                        content: msg.role === 'system'
+                            ? markdownUtils.deserializeMarkdown(msg.content)
+                            : msg.content,
+                        raw_content: msg.content,
+                        role: msg.role,
+                        timestamp: msg.timestamp,
+                        metadata: msg.metadata,
+                        chat_created_at: chat.created_at
+                    }));
+                    allMessages.push(...deserializedMessages);
+                }
+            }
+
+            // Sort messages by timestamp
+            return allMessages.sort((a, b) =>
+                new Date(a.timestamp) - new Date(b.timestamp)
+            );
+        } catch (error) {
+            logger.error('Error getting chat messages', { chatId, userId, error: error.message });
             throw error;
         }
     }

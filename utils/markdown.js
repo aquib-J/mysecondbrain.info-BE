@@ -13,7 +13,7 @@ const window = new JSDOM('').window;
 const DOMPurify = createDOMPurify(window);
 const logger = new Logger();
 
-// Configure marked
+// Configure marked for security and consistent output
 marked.setOptions({
     gfm: true, // GitHub Flavored Markdown
     breaks: true, // Line breaks are rendered as <br>
@@ -22,7 +22,7 @@ marked.setOptions({
     headerIds: false, // Don't add ids to headers (security)
 });
 
-// Configure allowed tags and attributes for sanitization
+// Security configuration for DOMPurify
 const ALLOWED_TAGS = [
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'p', 'a', 'ul', 'ol',
     'li', 'b', 'i', 'strong', 'em', 'strike', 'code', 'hr', 'br', 'div',
@@ -30,80 +30,22 @@ const ALLOWED_TAGS = [
     'del', 'dl', 'dt', 'dd', 'sup', 'sub', 'kbd', 'q'
 ];
 
-const FORBIDDEN_TAGS = [
-    'script', 'style', 'iframe', 'form', 'button', 'input', 'textarea',
-    'select', 'option', 'object', 'embed', 'link', 'meta', 'title', 'frame',
-    'frameset', 'base', 'noscript', 'canvas', 'applet'
-];
-
 const ALLOWED_ATTR = [
     'href', 'name', 'target', 'title', 'class', 'id', 'alt', 'width', 'height',
     'dir', 'lang', 'align', 'valign', 'hreflang', 'rel'
-];
-
-const FORBIDDEN_ATTR = [
-    'onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onmousedown',
-    'onmouseup', 'onkeydown', 'onkeypress', 'onkeyup', 'onchange', 'onfocus',
-    'onblur', 'style', 'srcset', 'data', 'src', 'action', 'formaction', 'poster',
-    'javascript:', 'xlink:href'
 ];
 
 // Configure DOMPurify
 const purifyConfig = {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
-    FORBID_TAGS: FORBIDDEN_TAGS,
-    FORBID_ATTR: FORBIDDEN_ATTR,
-    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'object', 'embed'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'javascript:', 'xlink:href'],
     ADD_ATTR: ['target'],
-    USE_PROFILES: {
-        html: true,
-        svg: false,
-        svgFilters: false,
-        mathMl: false
-    },
-    FORCE_BODY: true,
-    SANITIZE_DOM: true,
-    KEEP_CONTENT: true,
-    RETURN_DOM: false,
-    RETURN_DOM_FRAGMENT: false,
-    RETURN_DOM_IMPORT: false,
+    USE_PROFILES: { html: true },
     RETURN_TRUSTED_TYPE: false,
-    WHOLE_DOCUMENT: false
+    ALLOW_DATA_ATTR: false
 };
-
-// Add a hook to completely remove iframes and other dangerous elements
-DOMPurify.addHook('beforeSanitizeElements', (node) => {
-    if (node.nodeName && (
-        node.nodeName.toLowerCase() === 'iframe' ||
-        node.nodeName.toLowerCase() === 'script' ||
-        node.nodeName.toLowerCase() === 'object' ||
-        node.nodeName.toLowerCase() === 'embed'
-    )) {
-        node.parentNode?.removeChild(node);
-        return node;
-    }
-});
-
-// Add a hook to remove dangerous attributes
-DOMPurify.addHook('beforeSanitizeAttributes', (node) => {
-    if (node.hasAttribute && node.hasAttribute('href')) {
-        const href = node.getAttribute('href');
-        if (href && href.toLowerCase().indexOf('javascript:') !== -1) {
-            node.removeAttribute('href');
-        }
-    }
-
-    if (node.hasAttribute && node.hasAttribute('src')) {
-        const src = node.getAttribute('src');
-        if (src && (
-            src.toLowerCase().indexOf('javascript:') !== -1 ||
-            src.toLowerCase().indexOf('data:') !== -1
-        )) {
-            node.removeAttribute('src');
-        }
-    }
-});
 
 // Initialize turndown service for HTML to Markdown conversion
 const turndownService = new TurndownService({
@@ -114,7 +56,7 @@ const turndownService = new TurndownService({
     emDelimiter: '*'
 });
 
-// Add custom rules to turndown
+// Add custom rules to turndown for code blocks
 turndownService.addRule('codeBlocks', {
     filter: node => node.nodeName === 'PRE' && node.firstChild && node.firstChild.nodeName === 'CODE',
     replacement: (content, node) => {
@@ -124,91 +66,79 @@ turndownService.addRule('codeBlocks', {
 });
 
 /**
- * Preprocess markdown content to handle edge cases
- * @param {string} markdown - The markdown content to preprocess
- * @returns {string} - The preprocessed markdown
- */
-function preprocessMarkdown(markdown) {
-    if (!markdown) return '';
-
-    // Use light preprocessing to maintain size closer to original
-    let processed = markdown;
-
-    // Completely remove dangerous tags
-    processed = processed.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-    processed = processed.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
-
-    // Replace dangerous attributes
-    processed = processed.replace(/javascript:/gi, 'removed:');
-    processed = processed.replace(/onerror=/gi, 'data-error=');
-    processed = processed.replace(/onclick=/gi, 'data-click=');
-
-    // Handle tables with empty cells properly but minimally
-    processed = processed.replace(/\|\s*\|/g, '| |');
-
-    return processed;
-}
-
-/**
- * Post-process HTML to fix any issues after rendering
- * @param {string} html - The HTML to post-process
- * @returns {string} - The post-processed HTML
- */
-function postprocessHTML(html) {
-    if (!html) return '<p></p>'; // Return a minimal HTML element for empty input
-
-    // Make all links open in a new tab and add noopener and noreferrer for security
-    const processed = html.replace(/<a\s+(?:[^>]*?\s+)?href=["']([^"']*)["']([^>]*)>/gi,
-        (match, url, rest) => {
-            // Skip modifying internal links or anchor links
-            if (url.startsWith('#') || url.startsWith('/')) {
-                return match;
-            }
-
-            // Check if target attribute already exists
-            if (!/\starget=["'][^"']*["']/i.test(rest)) {
-                return `<a href="${url}" target="_blank" rel="noopener noreferrer"${rest}>`;
-            }
-
-            // Add rel attribute if it doesn't exist
-            if (!/\srel=["'][^"']*["']/i.test(rest)) {
-                return `<a href="${url}" ${rest} rel="noopener noreferrer">`;
-            }
-
-            return match;
-        }
-    );
-
-    return processed;
-}
-
-/**
- * Serialize markdown content for safe storage with minimal transformation
+ * Serialize markdown content for storage in the database
  * @param {string} markdown - The markdown content to serialize
  * @returns {string} - The serialized markdown
  */
 function serializeMarkdown(markdown) {
     if (!markdown) return '';
 
-    // Preprocess with minimal transformations to keep size similar
-    const preprocessed = preprocessMarkdown(markdown);
-
-    // Encode only essential HTML entities
-    return preprocessed;
+    try {
+        // Simple sanitization to remove potentially dangerous content
+        const cleaned = DOMPurify.sanitize(markdown);
+        return cleaned;
+    } catch (error) {
+        logger.error('Error serializing markdown', { error: error.message });
+        return markdown; // Return original if error occurs
+    }
 }
 
 /**
- * Deserialize stored markdown content
+ * Deserialize stored markdown content and convert to HTML
  * @param {string} serialized - The serialized markdown content
  * @returns {string} - The deserialized and sanitized markdown as HTML
  */
 function deserializeMarkdown(serialized) {
-    if (!serialized) return '<p></p>'; // Return a minimal HTML element for empty input
+    if (!serialized) return '<p></p>'; // Return empty paragraph for empty input
 
-    // Convert markdown to HTML
-    const html = markdownToHtml(serialized);
+    try {
+        // Convert markdown to HTML using marked
+        const html = marked.parse(serialized);
 
-    return html;
+        // Sanitize HTML to prevent XSS attacks
+        const sanitized = DOMPurify.sanitize(html, purifyConfig);
+
+        // Make all external links open in a new tab
+        const enhanced = sanitized.replace(
+            /<a\s+(?:[^>]*?\s+)?href=["']([^"']*)["']([^>]*)>/gi,
+            (match, url, rest) => {
+                if (url.startsWith('#') || url.startsWith('/')) {
+                    return match; // Skip internal links
+                }
+                if (!rest.includes('target=')) {
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer"${rest}>`;
+                }
+                if (!rest.includes('rel=')) {
+                    return `<a href="${url}"${rest} rel="noopener noreferrer">`;
+                }
+                return match;
+            }
+        );
+
+        return enhanced;;
+        // // Remove literal newlines from HTML while preserving structure
+        // // This prevents newlines from being rendered as text in browsers
+        // const cleanedHtml = enhanced
+        //     // Remove newlines between HTML tags
+        //     .replace(/>\n</g, '><')
+        //     // Remove newlines at the start of the text
+        //     .replace(/\n+/g, ' ')
+        //     // Normalize spaces
+        //     .replace(/\s+/g, ' ')
+        //     // Ensure proper spacing for inline elements
+        //     .replace(/<\/li><li>/g, '</li>\n<li>')
+        //     .replace(/<\/h[1-6]><p>/g, '</h$1>\n<p>')
+        //     .replace(/<\/p><p>/g, '</p>\n<p>')
+        //     .replace(/<\/ul><h/g, '</ul>\n<h')
+        //     .replace(/<\/ol><h/g, '</ol>\n<h')
+        //     .replace(/<\/p><h/g, '</p>\n<h')
+        //     .replace(/<\/h[1-6]><h/g, '</h$1>\n<h');
+
+        // return cleanedHtml;
+    } catch (error) {
+        logger.error('Error deserializing markdown', { error: error.message });
+        return `<p>Error rendering content: ${encode(String(error.message))}</p>`;
+    }
 }
 
 /**
@@ -217,21 +147,7 @@ function deserializeMarkdown(serialized) {
  * @returns {string} - The sanitized HTML
  */
 function markdownToHtml(markdown) {
-    if (!markdown) return '<p></p>'; // Return a minimal HTML element for empty input
-
-    try {
-        // Parse markdown to HTML using marked
-        const rawHtml = marked.parse(markdown);
-
-        // Sanitize HTML to prevent XSS attacks
-        const sanitizedHtml = DOMPurify.sanitize(rawHtml, purifyConfig);
-
-        // Post-process the HTML for any fixes
-        return postprocessHTML(sanitizedHtml);
-    } catch (error) {
-        logger.error('Error converting markdown to HTML', { error });
-        return `<p>Error rendering content: ${encode(String(error.message))}</p>`;
-    }
+    return deserializeMarkdown(markdown);
 }
 
 /**
@@ -244,12 +160,12 @@ function htmlToMarkdown(html) {
 
     try {
         // Sanitize the HTML first
-        const sanitizedHtml = DOMPurify.sanitize(html, purifyConfig);
+        const sanitized = DOMPurify.sanitize(html, purifyConfig);
 
         // Convert to markdown
-        return turndownService.turndown(sanitizedHtml);
+        return turndownService.turndown(sanitized);
     } catch (error) {
-        logger.error('Error converting HTML to markdown', { error });
+        logger.error('Error converting HTML to markdown', { error: error.message });
         return `Error converting content: ${error.message}`;
     }
 }
@@ -294,17 +210,6 @@ function containsMarkdown(text) {
         /^\s*---\s*$/m,                // Horizontal rules
         /\|[\s\S]+?\|/                 // Tables
     ];
-
-    // Special case for "Edge Case - Emphasis Inside Words"
-    if (text === 'word_with_underscores and another*with*asterisks') {
-        return false;
-    }
-
-    // Check for word emphasis specifically (avoid false positives)
-    if (/\w[*_]\w/.test(text) &&
-        !markdownPatterns.some(pattern => pattern.test(text))) {
-        return false;
-    }
 
     // Check if any pattern matches
     return markdownPatterns.some(pattern => pattern.test(text));

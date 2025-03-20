@@ -158,20 +158,27 @@ class DocumentService {
     /**
      * Get document download URL
      * @param {number} documentId - ID of the document
+     * @param {{
+     * docExists?:boolean,
+     * s3_upload_url?:string}} options optional options object
      * @returns {Promise<string>}
      */
-    async getDownloadUrl(documentId) {
+    async getDownloadUrl(documentId,options) {
         try {
-            const document = await Document.findOne({
-                where: {
-                    id: documentId,
-                    status: 'active'
+            let document;
+            if (!options?.docExists) {
+                console.log('this is not triggered');
+                document = await Document.findOne({
+                    where: {
+                        id: documentId,
+                        status: 'active'
+                    }
+                });
+                if (!document) {
+                    throw new Error('Document not found');
                 }
-            });
-            if (!document) {
-                throw new Error('Document not found');
             }
-            const key = S3.fetchKeyFromDbUrl(document.s3_upload_url);
+            const key = S3.fetchKeyFromDbUrl(document?.s3_upload_url || options?.s3_upload_url);
             return S3.getPresignedUrl(key, 3600); // 1 hour
         } catch (error) {
             logger.error('Error getting download URL', { error });
@@ -208,7 +215,7 @@ class DocumentService {
             });
 
             for (const document of documents) {
-                document.s3_upload_url = await this.getDownloadUrl(document.id);
+                document.s3_upload_url = await this.getDownloadUrl(document.id, { docExists: true, s3_upload_url: document.s3_upload_url });
             }
 
             const totalDocuments = await Document.count({ where: whereClause });
@@ -314,7 +321,14 @@ class DocumentService {
 
             // Return document status with job info if available
             return {
-                documentStatus: document.status,
+                documentUrl: await this.getDownloadUrl(document.id, {
+                    docExists: true,
+                    s3_upload_url: document.s3_upload_url
+                }),
+                documentId: document.id,
+                docName: document.filename,
+                docType: document.file_type,
+                docStatus: document.status,
                 jobStatus: jobData && jobData.length > 0 ? jobData[0].job_status : 'unknown',
                 jobDueAt: jobData && jobData.length > 0 ? jobData[0].job_created : null
             };

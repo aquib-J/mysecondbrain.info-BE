@@ -75,7 +75,7 @@ const listDocuments = async (req, res) => {
 const downloadDocument = async (req, res) => {
     const { documentId } = req.params;
     try {
-        const document = await DocumentService.getDownloadUrl(documentId);
+        const document = await DocumentService.getDownloadUrl(documentId, { docExists: false });
         return Response.success(res, 'Fetched document successfully', document);
     } catch (error) {
         logger.error('Error downloading document', { error });
