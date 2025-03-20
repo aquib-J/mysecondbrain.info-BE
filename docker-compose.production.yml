@@ -59,7 +59,9 @@ services:
 
   # Node.js Express Application
   api:
-    image: ${DOCKERHUB_USERNAME}/mysecondbrain-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "3500:3500"
     depends_on:

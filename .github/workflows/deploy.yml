@@ -9,25 +9,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push Docker images
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/mysecondbrain-api:latest
-
       - name: Deploy to DigitalOcean Droplet
         uses: appleboy/ssh-action@v0.1.10
         with:
@@ -37,18 +18,25 @@ jobs:
           script: |
             # Navigate to the application directory
             cd ~/mysecondbrain.info-BE
+
+            #set all the env variables here
+            set -o allexport; source ~/.env; set +o allexport
+
+            #stop and remove the current containers
+            docker compose -f docker-compose.production.yml down
+            
+            #remove all the dangling containers
+            docker rmi $(docker images -f dangling=true -q)
             
             # Pull the latest code
+            git checkout main
             git pull
             
-            # Pull the latest Docker image
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/mysecondbrain-api:latest
+            # Build the image locally
+            docker build -t mysecondbrain-api:latest .
             
-            # Stop and remove the current containers
-            docker-compose down
+            # Start the containers with the newly built image
+            docker compose -f docker-compose.production.yml up -d
             
-            # Start the containers again with the new image
-            docker-compose up -d
-            
-            # Clean up unused Docker resources
-            docker system prune -af 
+            # Clean up unused Docker resources (keep images used in last 24h)
+            docker system prune -a --filter "until=24h" -f 
