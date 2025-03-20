@@ -14,8 +14,26 @@ class RedisConnect {
         this.connectionAttempts = 0;
         this.maxConnectionAttempts = 5;
         this.url = REDIS_URL || 'redis://localhost:6379';
+        this.isAuthenticated = this.detectAuthFromUrl(this.url);
 
-        logger.info('Redis connection manager initialized', { url: this.maskRedisUrl(this.url) });
+        logger.info('Redis connection manager initialized', {
+            url: this.maskRedisUrl(this.url),
+            authenticated: this.isAuthenticated
+        });
+    }
+
+    /**
+     * Detect if Redis URL contains authentication
+     * @param {string} url - Redis URL
+     * @returns {boolean} - True if authentication is present
+     */
+    detectAuthFromUrl(url) {
+        try {
+            const parsedUrl = new URL(url);
+            return !!parsedUrl.password && parsedUrl.password.length > 0;
+        } catch (error) {
+            return false;
+        }
     }
 
     /**

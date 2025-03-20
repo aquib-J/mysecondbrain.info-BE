@@ -1,5 +1,5 @@
 import winston from 'winston';
-import { SERVICE_NAME, LOG_LEVEL } from '../config/env.js';
+import { SERVICE_NAME, LOG_LEVEL, NODE_ENV } from '../config/env.js';
 import { AsyncLocalStorage } from 'async_hooks';
 import path from 'path';
 import fs from 'fs';
@@ -105,7 +105,7 @@ export default class Logger {
         }
 
         // Add environment to metadata
-        defaultMeta.environment = process.env.NODE_ENV || 'development';
+        defaultMeta.environment = NODE_ENV || 'development';
 
         // Add colors to winston
         winston.addColors(loggerColors);

@@ -175,20 +175,25 @@ This is the main business logic layer that uses the other modules:
 
 ### Prerequisites
 
-- Node.js (v16+)
+- Node.js *(lts/hydrogen -> v18.20.7)*
 - MySQL 8
-- Weaviate
+- Weaviate [docker container deployed locally]
 - AWS S3 bucket
 - OpenAI API key
 - Python 3.8+ (for document processing script)
 
 ### Environment Variables
 
-Create a `.env.development` file with the variables specified in the `.env.sample` file.
+Create a `.env.development` file with the variables specified in the example:
+
+```bash
+cp .env.development.example .env.development
+# Edit the file with your actual configuration
+```
 
 For a complete list of all environment variables and their configurations, see [Environment Variables Documentation](./docs/env-variables.md).
 
-### Installation
+### Manual Installation
 
 1. Clone the repository:
    ```
@@ -220,22 +225,43 @@ For a complete list of all environment variables and their configurations, see [
    npm run start:dev
    ```
 
-## For System Maintenance
+### Docker Installation (Recommended)
+
+For a faster and more consistent setup, use Docker:
+
+1. Ensure Docker and Docker Compose are installed on your system
+2. Set up environment variables:
+   ```bash
+   cp .env.development.example .env.development
+   # Edit the file with your actual configuration
+   ```
+3. Start the application stack:
+   ```bash
+   docker compose up -d
+   ```
+4. To check the application logs:
+   ```bash
+   docker compose logs -f api
+   ```
+5. To stop all services:
+   ```bash
+   docker compose down
+   ```
+For detailed instructions on deployment, scaling, and maintenance using Docker, see our comprehensive [Deployment Guide](./docs/deployment.md).
+
+## System Maintenance
 
 If you're setting up or managing the system, start with:
 
 1. Review the environment variables documentation to ensure proper configuration
 2. Set up log archiving for production deployments to ensure data retention
 
-
 ## Detailed Documentation Files
 
 | Document | Description |
 |----------|-------------|
-| [Environment Variables](./env-variables.md) | Complete list of all environment variables used by the system, their defaults, and which ones are required. |
-| [Log Archiving](./log-archiving.md) | Detailed guide on the log archiving system, including AWS S3 configuration, scheduling, and monitoring. |
-
-
+| [Environment Variables](./docs/env-variables.md) | Complete list of all environment variables used by the system, their defaults, and which ones are required. |
+| [Log Archiving](./docs/log-archiving.md) | Detailed guide on the log archiving system, including AWS S3 configuration, scheduling, and monitoring. |
 
 ## Contributing to Documentation
 
@@ -247,7 +273,6 @@ Documentation should be written in Markdown format and follow these guidelines:
 - Include code examples when relevant
 - Provide troubleshooting tips where appropriate
 - Link to related documentation when applicable 
-
 
 ## License
 

@@ -34,8 +34,9 @@ export const {
     OPENAI_CHAT_MODEL,
     WEAVIATE_SCHEME = 'http',
     WEAVIATE_HOST = 'localhost:8080',
+    WEAVIATE_API_KEY,
     REDIS_URL = 'redis://localhost:6379',
-    USE_REDIS = NODE_ENV === 'production' || NODE_ENV === 'development' ? 'true' : 'false',
+    USE_REDIS = NODE_ENV === 'production',
     EMAIL_HOST,
     EMAIL_PORT,
     EMAIL_USER,
@@ -67,7 +68,9 @@ const requiredEnvVars = [
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',
     'AWS_REGION',
-    'AWS_S3_BUCKET_NAME'
+    'AWS_S3_BUCKET_NAME',
+    'WEAVIATE_SCHEME',
+    'WEAVIATE_HOST'
 ];
 
 // Add email password to required env vars for production if sending emails

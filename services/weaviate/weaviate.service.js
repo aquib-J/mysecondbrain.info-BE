@@ -13,19 +13,85 @@ class VectorStoreService {
     constructor() {
         this.documentClassName = 'Document';
         this.jsonClassName = 'JsonDocument';
+        this.initialized = false;
+        this.initializationAttempts = 0;
+        this.maxInitAttempts = 10;
+
+        // Start initialization process
         this.initialize();
+
+        // Schedule periodic health checks and re-initialization if needed
+        setInterval(() => this.ensureInitialized(), 60000); // Check every minute
     }
 
     /**
-     * Initialize Weaviate schema
+     * Initialize Weaviate schema with retry logic
      */
     async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        this.initializationAttempts++;
+
         try {
+            logger.info('Initializing Weaviate schema', { attempt: this.initializationAttempts });
+
+            // Ensure Weaviate is available
+            const isHealthy = await weaviateClient.healthCheck();
+            if (!isHealthy) {
+                logger.warn('Weaviate is not healthy, will retry initialization later');
+                this.scheduleReinitialization();
+                return;
+            }
+
+            // Initialize schema classes
             await this.initializeDocumentClass();
             await this.initializeJsonDocumentClass();
+
+            // Mark as successfully initialized
+            this.initialized = true;
+            this.initializationAttempts = 0;
             logger.info('Weaviate schema initialized successfully');
         } catch (error) {
-            logger.error('Error initializing Weaviate schema', { error });
+            logger.error('Error initializing Weaviate schema', { error, attempt: this.initializationAttempts });
+            this.scheduleReinitialization();
+        }
+    }
+
+    /**
+     * Schedule a re-initialization attempt with exponential backoff
+     * @private
+     */
+    scheduleReinitialization() {
+        if (this.initializationAttempts >= this.maxInitAttempts) {
+            logger.error(`Failed to initialize Weaviate after ${this.maxInitAttempts} attempts, giving up`);
+            return;
+        }
+
+        const delay = Math.min(1000 * Math.pow(2, this.initializationAttempts), 60000);
+        logger.info(`Scheduling Weaviate re-initialization in ${delay}ms`, { attempt: this.initializationAttempts });
+
+        setTimeout(() => this.initialize(), delay);
+    }
+
+    /**
+     * Ensure the service is initialized, retry if not
+     */
+    async ensureInitialized() {
+        if (!this.initialized) {
+            logger.info('Weaviate not initialized, retrying initialization');
+            await this.initialize();
+            return;
+        }
+
+        // Check if Weaviate is healthy
+        const isHealthy = await weaviateClient.healthCheck();
+        if (!isHealthy) {
+            logger.warn('Weaviate connection lost, resetting initialization state');
+            this.initialized = false;
+            this.initializationAttempts = 0;
+            await this.initialize();
         }
     }
 

@@ -10,7 +10,7 @@ This document provides a comprehensive list of environment variables used in the
 | `PORT` | Port to run the application | `3500` | No |
 | `SERVICE_NAME` | Name of the service for logging | `mysecondbrain-backend` | No |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` | No |
-| `ENABLE_CRON_JOBS` | Enable scheduled cron jobs | `false` | No |
+| 
 
 ## Database Configuration
 
@@ -74,7 +74,7 @@ Log files are automatically archived to S3 daily using the following configurati
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` | No |
-| `USE_REDIS` | Enable Redis caching | `true` in dev/prod | No |
+| `USE_REDIS` | Enable Redis caching | `true` in prod | No |
 
 ## Email Configuration
 
@@ -107,6 +107,5 @@ To enable log archiving to AWS S3:
    AWS_SECRET_ACCESS_KEY=your_secret_key
    AWS_REGION=your_region
    AWS_S3_BUCKET_NAME=your_bucket_name
-   ENABLE_CRON_JOBS=true
    ```
 4. Logs will be automatically archived daily at 1:00 AM UTC 

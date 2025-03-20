@@ -6,6 +6,7 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
+!logs/.gitkeep
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
@@ -73,9 +74,13 @@ web_modules/
 .yarn-integrity
 
 # dotenv environment variable files
+.env
 .env.development
 .env.production
+.env.test
 
+# Allow example environment files
+!.env.*.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -139,7 +144,9 @@ requirements/
 
 # Doc-store
 doc-store/
+!doc-store/.gitkeep
 output-store/
+!output-store/.gitkeep
 
 
 # Tests
@@ -148,3 +155,6 @@ to-not-commit/
 
 
 backup/scripts/
+
+# Docker volumes
+docker-volumes/

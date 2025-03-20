@@ -24,7 +24,6 @@ AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=your_region (e.g., us-east-1)
 AWS_S3_BUCKET_NAME=your_bucket_name
-ENABLE_CRON_JOBS=true
 ```
 
 ## How It Works

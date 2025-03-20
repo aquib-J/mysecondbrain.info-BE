@@ -4,7 +4,7 @@ import { Document, Job } from '../databases/mysql8/db-schemas.js';
 import * as uuid from 'uuid';
 import sequelize from '../databases/mysql8/sequelizeConnect.js';
 import { Op } from 'sequelize';
-import pdf from 'pdf-parse';
+import pdfParser from '../utils/pdf-parse-wrapper.js';
 import mammoth from 'mammoth';
 import jobService from './job.service.js';
 import weaviateService from './weaviate/weaviate.service.js';
@@ -163,7 +163,7 @@ class DocumentService {
      * s3_upload_url?:string}} options optional options object
      * @returns {Promise<string>}
      */
-    async getDownloadUrl(documentId,options) {
+    async getDownloadUrl(documentId, options) {
         try {
             let document;
             if (!options?.docExists) {
@@ -370,7 +370,7 @@ class DocumentService {
         let pages = 0;
         switch (fileType) {
             case 'application/pdf':
-                const pdfData = await pdf(fileBuffer);
+                const pdfData = await pdfParser(fileBuffer);
                 pages = pdfData.numpages;
                 break;
             case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':

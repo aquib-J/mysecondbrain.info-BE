@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+logs/*
+!logs/.gitkeep
+.git
+.github
+.gitignore
+doc-store/*
+!doc-store/.gitkeep
+.env*
+.DS_Store
+README.md
+docker-compose.yml
+Dockerfile
+.dockerignore 

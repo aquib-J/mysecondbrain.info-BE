@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Logger from '../../utils/Logger.js';
-import { WEAVIATE_SCHEME, WEAVIATE_HOST } from '../../config/env.js';
+import { WEAVIATE_SCHEME, WEAVIATE_HOST, WEAVIATE_API_KEY } from '../../config/env.js';
 
 const logger = new Logger();
 
@@ -9,12 +9,65 @@ const logger = new Logger();
  */
 class WeaviateClient {
     constructor() {
+        // Base headers
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+
+        // Add API key if provided
+        if (WEAVIATE_API_KEY) {
+            headers['Authorization'] = `Bearer ${WEAVIATE_API_KEY}`;
+            logger.info('Weaviate API key authentication enabled');
+        } else {
+            logger.info('Weaviate running in anonymous mode (no API key)');
+        }
+
         this.httpClient = axios.create({
             baseURL: `${WEAVIATE_SCHEME || 'http'}://${WEAVIATE_HOST || 'localhost:8080'}`,
-            headers: {
-                'Content-Type': 'application/json',
-            }
+            headers,
+            // Add longer timeout to handle slow startup
+            timeout: 30000
         });
+
+        // Retry configuration
+        this.maxRetries = 10;
+        this.retryDelay = 2000;
+    }
+
+    /**
+     * Make an API request with retry mechanism
+     * @private
+     * @param {Function} apiCall - Function that returns a promise for the API call
+     * @param {string} operation - Name of the operation for logging
+     * @returns {Promise<any>} - API response
+     */
+    async #withRetry(apiCall, operation) {
+        let lastError;
+        for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+            try {
+                return await apiCall();
+            } catch (error) {
+                lastError = error;
+
+                // Log the error
+                if (attempt < this.maxRetries) {
+                    logger.warn(`Weaviate ${operation} failed, retrying (${attempt}/${this.maxRetries})`, {
+                        error: error.message,
+                        attempt
+                    });
+
+                    // Wait before retrying (with exponential backoff)
+                    await new Promise(resolve => setTimeout(resolve, this.retryDelay * Math.pow(1.5, attempt - 1)));
+                }
+            }
+        }
+
+        // If we've exhausted all retries, throw the last error
+        logger.error(`Weaviate ${operation} failed after ${this.maxRetries} attempts`, {
+            error: lastError.message,
+            stack: lastError.stack
+        });
+        throw lastError;
     }
 
     /**
@@ -22,13 +75,10 @@ class WeaviateClient {
      * @returns {Promise<Object>} - Schema object
      */
     async getSchema() {
-        try {
-            const response = await this.httpClient.get('/v1/schema');
-            return response.data;
-        } catch (error) {
-            logger.error('Error getting schema', { error });
-            throw error;
-        }
+        return this.#withRetry(
+            () => this.httpClient.get('/v1/schema').then(response => response.data),
+            'getSchema'
+        );
     }
 
     /**
@@ -37,13 +87,10 @@ class WeaviateClient {
      * @returns {Promise<Object>} - Class object
      */
     async getClass(className) {
-        try {
-            const response = await this.httpClient.get(`/v1/schema/${className}`);
-            return response.data;
-        } catch (error) {
-            logger.error(`Error getting class ${className}`, { error });
-            throw error;
-        }
+        return this.#withRetry(
+            () => this.httpClient.get(`/v1/schema/${className}`).then(response => response.data),
+            `getClass(${className})`
+        );
     }
 
     /**
@@ -52,13 +99,10 @@ class WeaviateClient {
      * @returns {Promise<Object>} - Response data
      */
     async createClass(classDefinition) {
-        try {
-            const response = await this.httpClient.post('/v1/schema', classDefinition);
-            return response.data;
-        } catch (error) {
-            logger.error('Error creating class', { error, class: classDefinition.class });
-            throw error;
-        }
+        return this.#withRetry(
+            () => this.httpClient.post('/v1/schema', classDefinition).then(response => response.data),
+            'createClass'
+        );
     }
 
     /**
@@ -68,13 +112,10 @@ class WeaviateClient {
      * @returns {Promise<Object>} - Response data
      */
     async updateClass(className, updates) {
-        try {
-            const response = await this.httpClient.put(`/v1/schema/${className}`, updates);
-            return response.data;
-        } catch (error) {
-            logger.error(`Error updating class ${className}`, { error });
-            throw error;
-        }
+        return this.#withRetry(
+            () => this.httpClient.put(`/v1/schema/${className}`, updates).then(response => response.data),
+            `updateClass(${className})`
+        );
     }
 
     /**
@@ -129,15 +170,10 @@ class WeaviateClient {
      * @returns {Promise<Object>} - Query results
      */
     async graphqlQuery(query) {
-        try {
-            const response = await this.httpClient.post('/v1/graphql', { query });
-            // The Weaviate GraphQL API returns data in the format { data: { ... } }
-            // We need to return the data property directly
-            return response.data.data ? response.data : { data: response.data };
-        } catch (error) {
-            logger.error('Error executing GraphQL query', { error });
-            throw error;
-        }
+        return this.#withRetry(
+            () => this.httpClient.post('/v1/graphql', { query }).then(response => response.data),
+            'graphqlQuery'
+        );
     }
 
     /**
@@ -156,12 +192,35 @@ class WeaviateClient {
 
     async healthCheck() {
         try {
-            const response = await this.httpClient.get('v1/.well-known/live');
-            return response.status === 200;
+            return await this.#withRetry(
+                () => this.httpClient.get('v1/.well-known/live').then(response => response.status === 200),
+                'healthCheck'
+            );
         } catch (error) {
-            logger.error('Weaviate is not running', { error });
-            return 'unavailable';
+            logger.error('Weaviate health check failed', { error: error.message });
+            return false;
         }
+    }
+
+    async deleteClass(className) {
+        return this.#withRetry(
+            () => this.httpClient.delete(`/v1/schema/${className}`).then(response => response.data),
+            `deleteClass(${className})`
+        );
+    }
+
+    async batchImport(objects, className) {
+        return this.#withRetry(
+            () => this.httpClient.post('/v1/batch/objects', { objects }).then(response => response.data),
+            `batchImport(${className})`
+        );
+    }
+
+    async deleteObject(id, className) {
+        return this.#withRetry(
+            () => this.httpClient.delete(`/v1/objects/${id}`).then(response => response.data),
+            `deleteObject(${id})`
+        );
     }
 }
 

@@ -1,4 +1,4 @@
-import pdf from 'pdf-parse';
+import pdfParser from '../../utils/pdf-parse-wrapper.js';
 import Logger from '../../utils/Logger.js';
 
 const logger = new Logger();
@@ -12,7 +12,7 @@ class PdfService {
     async extractTextFromPdf(pdfBuffer) {
         try {
             // Parse PDF
-            const pdfData = await pdf(pdfBuffer);
+            const pdfData = await pdfParser(pdfBuffer);
             const fullText = pdfData.text;
 
             // Split text into pages
