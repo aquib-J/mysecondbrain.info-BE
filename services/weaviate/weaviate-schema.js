@@ -107,6 +107,81 @@ class WeaviateSchemaManager {
                         dataType: ['int'],
                         description: 'ID of the user who owns this document',
                         indexInverted: true
+                    },
+                    {
+                        name: 'rawJson',
+                        dataType: ['text'],
+                        description: 'Complete JSON document in string format',
+                        indexInverted: false
+                    },
+                    {
+                        name: 'schemaVersion',
+                        dataType: ['int'],
+                        description: 'Version of the schema structure',
+                        indexInverted: false
+                    },
+                    {
+                        name: 'isNumeric',
+                        dataType: ['boolean'],
+                        description: 'Whether the field value is numeric',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'numericValue',
+                        dataType: ['number'],
+                        description: 'Numeric value for aggregation operations',
+                        indexInverted: true
+                    }
+                ],
+                multiTenancyConfig: {
+                    enabled: true
+                }
+            },
+            JsonField: {
+                class: 'JsonField',
+                vectorizer: 'none', // We'll provide vectors explicitly
+                properties: [
+                    {
+                        name: 'documentId',
+                        dataType: ['int'],
+                        description: 'The ID of the document this field belongs to',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'userId',
+                        dataType: ['int'],
+                        description: 'ID of the user who owns this document',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'path',
+                        dataType: ['text'],
+                        description: 'Path to the field in the JSON structure',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'value',
+                        dataType: ['text'],
+                        description: 'String representation of the field value',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'valueType',
+                        dataType: ['text'],
+                        description: 'Data type of the value',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'isNumeric',
+                        dataType: ['boolean'],
+                        description: 'Whether the value can be parsed as a number',
+                        indexInverted: true
+                    },
+                    {
+                        name: 'numericValue',
+                        dataType: ['number'],
+                        description: 'Numeric value if applicable',
+                        indexInverted: true
                     }
                 ],
                 multiTenancyConfig: {

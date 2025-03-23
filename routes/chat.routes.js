@@ -5,8 +5,8 @@ import {
     listChats,
     deleteChat,
     queryDocuments,
-    structuredQuery,
-    updateChatTitle
+    updateChatTitle,
+    jsonQuery
 } from './controllers/chat.controller.js';
 import {
     createChatValidation,
@@ -14,8 +14,8 @@ import {
     listChatsValidation,
     deleteChatValidation,
     queryDocumentsValidation,
-    structuredQueryValidation,
-    updateChatTitleValidation
+    updateChatTitleValidation,
+    jsonQueryValidation
 } from '../middlewares/validation.middleware.js';
 import { queryRateLimiter } from '../middlewares/rate-limit.middleware.js';
 const chatRoutes = Router();
@@ -27,6 +27,7 @@ chatRoutes.get('/', listChatsValidation, listChats);
 chatRoutes.delete('/:chatId', deleteChatValidation, deleteChat);
 chatRoutes.post('/:chatId/query', queryRateLimiter, queryDocumentsValidation, queryDocuments);
 chatRoutes.put('/:chatId/title', updateChatTitleValidation, updateChatTitle);
-chatRoutes.post('/structured-query', queryRateLimiter, structuredQueryValidation, structuredQuery);
+// chatRoutes.post('/structured-query', queryRateLimiter, structuredQueryValidation, structuredQuery);
+chatRoutes.post('/json-query', queryRateLimiter, jsonQueryValidation, jsonQuery);
 
 export default chatRoutes;

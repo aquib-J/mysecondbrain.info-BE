@@ -287,6 +287,77 @@ Format your responses well with Markdown to make them readable and organized. Us
             return false;
         }
     }
+
+    /**
+     * Analyze JSON query intent using OpenAI
+     * @param {string} query - Natural language query
+     * @param {Array} documentFields - Available fields in the document
+     * @returns {Promise<Object>} - Query intent object
+     */
+    async analyzeJsonQueryIntent(query, documentFields = []) {
+        try {
+            // Format the document fields for the prompt
+            let fieldsContext = 'No field information available.';
+            if (documentFields && documentFields.length > 0) {
+                fieldsContext = documentFields.map(field => {
+                    return `- ${field.path} (${field.type}${field.example ? `, example: ${JSON.stringify(field.example)}` : ''})`;
+                }).join('\n');
+            }
+
+            // Build the system prompt
+            const systemPrompt = `You are an expert in analyzing natural language queries about JSON data.
+Your task is to determine if a query is asking for an aggregation (like max, min, avg, sum, count) or if it's a general search.
+You'll return a JSON object with the query intent.
+
+Available fields in the document:
+${fieldsContext}`;
+
+            // Build the user prompt
+            const userPrompt = `Analyze this query and return a JSON object in this format:
+{
+  "type": "aggregation" or "search",
+  "operation": "max", "min", "avg", "sum", "count", or null if not an aggregation,
+  "field": the field path being queried, or null if unclear,
+  "filter": { field: value } filter conditions or null,
+  "groupBy": field to group by or null
+}
+
+Query: "${query}"
+
+Only respond with the JSON object, nothing else.`;
+
+            // Call the OpenAI API
+            const response = await this.client.chat.completions.create({
+                model: this.chatModel,
+                temperature: 0.1,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ]
+            });
+
+            // Extract the content
+            const content = response.choices[0].message.content;
+
+            // Parse the JSON response
+            try {
+                // Find a JSON object in the response
+                const match = content.match(/\{[\s\S]*\}/);
+                if (match) {
+                    return JSON.parse(match[0]);
+                }
+                throw new Error('No valid JSON found in response');
+            } catch (jsonError) {
+                logger.error('Error parsing JSON from OpenAI response', { jsonError, content });
+                // Return default intent
+                return { type: 'search', operation: null, field: null, filter: null, groupBy: null };
+            }
+        } catch (error) {
+            logger.error('Error analyzing query intent with OpenAI', { error, query });
+            // Return default intent on error
+            return { type: 'search', operation: null, field: null, filter: null, groupBy: null };
+        }
+    }
 }
 
 export default new OpenAIService(); 

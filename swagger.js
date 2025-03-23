@@ -786,19 +786,29 @@ const options = {
                             'application/json': {
                                 schema: {
                                     type: 'object',
-                                    required: ['filters'],
+                                    required: ['operation', 'field', 'documentId'],
                                     properties: {
-                                        filters: {
-                                            type: 'object',
-                                            description: 'Query filters'
+                                        operation: {
+                                            type: 'string',
+                                            enum: ['max', 'min', 'avg', 'sum', 'count'],
+                                            description: 'Aggregation operation to perform'
                                         },
-                                        aggregations: {
-                                            type: 'object',
-                                            description: 'Optional aggregations'
+                                        field: {
+                                            type: 'string',
+                                            description: 'Field to perform the operation on'
                                         },
                                         documentId: {
+                                            type: 'integer',
+                                            description: 'ID of the JSON document to query'
+                                        },
+                                        filter: {
+                                            type: 'object',
+                                            description: 'Optional filter conditions',
+                                            example: { "category": "Fashion" }
+                                        },
+                                        groupBy: {
                                             type: 'string',
-                                            description: 'Optional specific document to query'
+                                            description: 'Optional field to group results by'
                                         }
                                     }
                                 }
@@ -807,22 +817,320 @@ const options = {
                     },
                     responses: {
                         '200': {
-                            description: 'Query results',
+                            description: 'Query executed successfully',
                             content: {
                                 'application/json': {
                                     schema: {
                                         type: 'object',
                                         properties: {
-                                            results: {
-                                                type: 'array',
-                                                items: {
-                                                    type: 'object'
-                                                }
+                                            status: {
+                                                type: 'string',
+                                                example: 'success'
                                             },
-                                            aggregations: {
-                                                type: 'object'
+                                            message: {
+                                                type: 'string',
+                                                example: 'Structured query executed successfully'
+                                            },
+                                            data: {
+                                                type: 'object',
+                                                properties: {
+                                                    result: {
+                                                        type: 'number',
+                                                        description: 'Aggregation result',
+                                                        example: 29533.75
+                                                    },
+                                                    count: {
+                                                        type: 'integer',
+                                                        description: 'Number of values used in calculation',
+                                                        example: 15
+                                                    },
+                                                    query: {
+                                                        type: 'object',
+                                                        description: 'Query parameters used'
+                                                    },
+                                                    naturalLanguageResponse: {
+                                                        type: 'string',
+                                                        description: 'Human-readable description of the result',
+                                                        example: 'The maximum of total_spent is 29533.75 (based on 15 values)'
+                                                    },
+                                                    groupedResults: {
+                                                        type: 'object',
+                                                        description: 'Results grouped by the specified field (if groupBy was used)'
+                                                    }
+                                                }
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        },
+                        '400': {
+                            description: 'Bad request',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        },
+                        '401': {
+                            description: 'Unauthorized',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            '/chats/nl-json-query': {
+                post: {
+                    tags: ['Chats'],
+                    summary: 'Perform a natural language query on JSON documents',
+                    security: [{ bearerAuth: [] }],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    required: ['query', 'documentId'],
+                                    properties: {
+                                        query: {
+                                            type: 'string',
+                                            description: 'Natural language query for the JSON document',
+                                            example: 'What is the maximum amount spent by customers who prefer Fashion?'
+                                        },
+                                        documentId: {
+                                            type: 'integer',
+                                            description: 'ID of the JSON document to query'
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    responses: {
+                        '200': {
+                            description: 'Query executed successfully',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        type: 'object',
+                                        properties: {
+                                            status: {
+                                                type: 'string',
+                                                example: 'success'
+                                            },
+                                            message: {
+                                                type: 'string',
+                                                example: 'Natural language query executed successfully'
+                                            },
+                                            data: {
+                                                type: 'object',
+                                                properties: {
+                                                    results: {
+                                                        type: 'array',
+                                                        description: 'Search results (if query was a search)',
+                                                        items: {
+                                                            type: 'object'
+                                                        }
+                                                    },
+                                                    count: {
+                                                        type: 'integer',
+                                                        description: 'Number of results found',
+                                                        example: 3
+                                                    },
+                                                    query: {
+                                                        type: 'object',
+                                                        properties: {
+                                                            original: {
+                                                                type: 'string',
+                                                                description: 'Original natural language query'
+                                                            },
+                                                            intent: {
+                                                                type: 'object',
+                                                                description: 'Parsed query intent',
+                                                                properties: {
+                                                                    type: {
+                                                                        type: 'string',
+                                                                        enum: ['aggregation', 'search'],
+                                                                        description: 'Type of query detected'
+                                                                    },
+                                                                    operation: {
+                                                                        type: 'string',
+                                                                        description: 'Aggregation operation (if applicable)'
+                                                                    },
+                                                                    field: {
+                                                                        type: 'string',
+                                                                        description: 'Field to operate on (if applicable)'
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    naturalLanguageResponse: {
+                                                        type: 'string',
+                                                        description: 'Human-readable response to the query',
+                                                        example: 'The maximum amount spent by Fashion customers is $24,890.50 (based on 5 values)'
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        '400': {
+                            description: 'Bad request',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        },
+                        '401': {
+                            description: 'Unauthorized',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            '/chats/json-query': {
+                post: {
+                    tags: ['Chats'],
+                    summary: 'Perform unified JSON query (supports both natural language and structured queries)',
+                    security: [{ bearerAuth: [] }],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    required: ['query', 'documentId'],
+                                    properties: {
+                                        query: {
+                                            oneOf: [
+                                                {
+                                                    type: 'string',
+                                                    description: 'Natural language query',
+                                                    example: 'What is the maximum total spent by customers who prefer Fashion?'
+                                                },
+                                                {
+                                                    type: 'object',
+                                                    description: 'Structured query object',
+                                                    properties: {
+                                                        operation: {
+                                                            type: 'string',
+                                                            enum: ['max', 'min', 'avg', 'sum', 'count'],
+                                                            description: 'Aggregation operation to perform'
+                                                        },
+                                                        field: {
+                                                            type: 'string',
+                                                            description: 'Field to perform the operation on'
+                                                        },
+                                                        filter: {
+                                                            type: 'object',
+                                                            description: 'Optional filter conditions'
+                                                        },
+                                                        groupBy: {
+                                                            type: 'string',
+                                                            description: 'Optional field to group results by'
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        },
+                                        documentId: {
+                                            type: 'integer',
+                                            description: 'ID of the JSON document to query'
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    responses: {
+                        '200': {
+                            description: 'Query executed successfully',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        type: 'object',
+                                        properties: {
+                                            status: {
+                                                type: 'string',
+                                                example: 'success'
+                                            },
+                                            message: {
+                                                type: 'string',
+                                                example: 'Query executed successfully'
+                                            },
+                                            data: {
+                                                type: 'object',
+                                                properties: {
+                                                    results: {
+                                                        type: 'array',
+                                                        description: 'Search results (if query was a search)',
+                                                        items: {
+                                                            type: 'object'
+                                                        }
+                                                    },
+                                                    result: {
+                                                        type: 'number',
+                                                        description: 'Aggregation result (if query was an aggregation)'
+                                                    },
+                                                    count: {
+                                                        type: 'integer',
+                                                        description: 'Number of values involved in the operation'
+                                                    },
+                                                    groupedResults: {
+                                                        type: 'object',
+                                                        description: 'Grouped results (if groupBy was used)'
+                                                    },
+                                                    query: {
+                                                        type: 'object',
+                                                        description: 'The processed query parameters'
+                                                    },
+                                                    naturalLanguageResponse: {
+                                                        type: 'string',
+                                                        description: 'Human-readable response to the query'
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        '400': {
+                            description: 'Bad request',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        },
+                        '401': {
+                            description: 'Unauthorized',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
                                     }
                                 }
                             }

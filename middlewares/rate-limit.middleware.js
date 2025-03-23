@@ -141,7 +141,7 @@ const userKeyGenerator = (req) => {
  */
 export const uploadRateLimiter = createLimiter({
     windowMs: 24 * 60 * 60 * 1000, // 24 hours
-    max: 6, // 6 uploads per day
+    max: 20, // 20 uploads per day
     keyGenerator: userKeyGenerator,
     limitType: 'upload',
     handler: (req, res) => {
@@ -162,7 +162,7 @@ export const uploadRateLimiter = createLimiter({
  */
 export const queryRateLimiter = createLimiter({
     windowMs: 24 * 60 * 60 * 1000, // 24 hours
-    max: 10, // 10 queries per day
+    max: 100, // 10 queries per day
     keyGenerator: userKeyGenerator,
     limitType: 'query',
     handler: (req, res) => {
@@ -182,7 +182,7 @@ export const queryRateLimiter = createLimiter({
  */
 export const globalRateLimiter = createLimiter({
     windowMs: 60 * 1000, // 1 minute
-    max: 10, // 10 requests per minute
+    max: 100, // 10 requests per minute
     keyGenerator: (req) => req.ip, // Always use IP for global rate limiting
     limitType: 'global',
     handler: (req, res) => {

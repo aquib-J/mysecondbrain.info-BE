@@ -1,5 +1,9 @@
 import { celebrate, Joi, Segments } from 'celebrate';
 import Response from '../utils/Response.js';
+import Logger from '../utils/Logger.js';
+
+
+let logger = new Logger();
 
 const VALID_FILE_TYPES = [
     'application/pdf',
@@ -115,7 +119,8 @@ export const createChatValidation = (req, res, next) => {
 
         next();
     } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters' + error?.message, 400);
     }
 };
 
@@ -146,7 +151,8 @@ export const getChatValidation = (req, res, next) => {
 
         next();
     } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters' + error?.message, 400);
     }
 };
 
@@ -172,7 +178,8 @@ export const listChatsValidation = (req, res, next) => {
 
         next();
     } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters' + error?.message, 400);
     }
 };
 
@@ -187,7 +194,8 @@ export const deleteChatValidation = (req, res, next) => {
 
         next();
     } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters' + error?.message, 400);
     }
 };
 
@@ -214,43 +222,41 @@ export const queryDocumentsValidation = (req, res, next) => {
 
         next();
     } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters' + error?.message, 400);
     }
 };
 
-// Validation for structured query
-export const structuredQueryValidation = (req, res, next) => {
-    try {
-        const { query, documentId } = req.body;
+// // Validation for structured query
+// export const structuredQueryValidation = [
+//     body('operation')
+//         .isString()
+//         .isIn(['max', 'min', 'avg', 'sum', 'count'])
+//         .withMessage('Operation must be one of: max, min, avg, sum, count'),
 
-        if (!query || typeof query !== 'object') {
-            return Response.fail(res, 'Query object is required', 400);
-        }
+//     body('field')
+//         .isString()
+//         .notEmpty()
+//         .withMessage('Field to aggregate must be specified'),
 
-        const { operation, field } = query;
-        if (!operation || !field) {
-            return Response.fail(res, 'Query must contain operation and field', 400);
-        }
+//     body('documentId')
+//         .isInt()
+//         .withMessage('Document ID must be an integer'),
 
-        const validOperations = ['sum', 'avg', 'min', 'max', 'count'];
-        if (!validOperations.includes(operation)) {
-            return Response.fail(res, `Operation must be one of: ${validOperations.join(', ')}`, 400);
-        }
+//     body('filter')
+//         .optional()
+//         .isObject()
+//         .withMessage('Filter must be an object if provided'),
 
-        if (typeof field !== 'string' || field.trim().length < 1) {
-            return Response.fail(res, 'Field must be a non-empty string', 400);
-        }
+//     body('groupBy')
+//         .optional()
+//         .isString()
+//         .withMessage('Group by field must be a string if provided'),
 
-        if (!documentId || isNaN(parseInt(documentId))) {
-            return Response.fail(res, 'Document ID is required and must be a valid number', 400);
-        }
+//     validateRequest
+// ];
 
-        next();
-    } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
-    }
-};
-
+//TODO: remvoe this validation method, not used anywhere
 // Validation for document search
 const searchDocumentValidation = celebrate({
     [Segments.PARAMS]: Joi.object().keys({
@@ -294,7 +300,66 @@ export const updateChatTitleValidation = (req, res, next) => {
 
         next();
     } catch (error) {
-        return Response.fail(res, 'Invalid request parameters', 400);
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters' + error?.message, 400);
+    }
+};
+
+// // Validation for natural language JSON query
+// export const nlJsonQueryValidation = [
+//     body('query')
+//         .isString()
+//         .notEmpty()
+//         .withMessage('Natural language query must be a non-empty string'),
+
+//     body('documentId')
+//         .isInt()
+//         .withMessage('Document ID must be an integer'),
+
+//     validateRequest
+// ];
+
+// Validation for unified JSON query endpoint
+export const jsonQueryValidation = (req, res, next) => {
+    try {
+        const { query, documentId } = req.body;
+
+        // Document ID is required
+        if (!documentId || isNaN(parseInt(documentId))) {
+            return Response.fail(res, 'Document ID is required and must be a valid number', 400);
+        }
+
+        // Query can be either a string or an object (structured query)
+        if (query === undefined || (typeof query !== 'string' && typeof query !== 'object')) {
+            return Response.fail(res, 'Query must be either a natural language string or a structured query object', 400);
+        }
+
+        // For structured queries, validate requirements
+        if (typeof query === 'object') {
+            const { operation, field } = query;
+            if (!operation || !field) {
+                return Response.fail(res, 'Structured queries must contain operation and field', 400);
+            }
+
+            const validOperations = ['sum', 'avg', 'min', 'max', 'count'];
+            if (!validOperations.includes(operation)) {
+                return Response.fail(res, `Operation must be one of: ${validOperations.join(', ')}`, 400);
+            }
+
+            if (typeof field !== 'string' || field.trim().length < 1) {
+                return Response.fail(res, 'Field must be a non-empty string', 400);
+            }
+        }
+
+        // For natural language queries, validate string
+        if (typeof query === 'string' && query.trim().length < 1) {
+            return Response.fail(res, 'Query must be a non-empty string', 400);
+        }
+
+        next();
+    } catch (error) {
+        logger.error(error.message, error);
+        return Response.fail(res, 'Invalid request parameters: ' + error?.message, 400);
     }
 };
 

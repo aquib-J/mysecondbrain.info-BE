@@ -115,7 +115,7 @@ class DocumentService {
 
             // Upload new file
             const s3Result = await S3.upload(fileBuffer, key, contentType);
-            const pages = await this.#extractPages(fileBuffer, contentType);
+            const pages = await this.#extractPages(fileBuffer, contentType); //TODO: need to fix this. NOT correct as of today.
             // Update document
             await document.update({
                 filename: originalName || document.filename,
@@ -136,6 +136,23 @@ class DocumentService {
                     //  and jobVectors and documentVectors are the same thing
                     await jobService.deleteVectors(job.id, transaction);
                     await weaviateService.deleteDocumentVectors(document.id, document.uploaded_by);
+                    /**
+                     * TODO: debug and fix these : why do we need two deletions, one by JobVectors and one by DocVectors and if possible to offload this entire responsibility to the vectorization service
+                     * | info: New request received {"environment":"development","ip":"::ffff:192.168.65.1","method":"DELETE","path":"/api/v1/documents/delete/1","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:57","userAgent":"PostmanRuntime/7.43.0"}
+api-1       | info: Incoming request {"body":{},"environment":"development","ip":"::ffff:192.168.65.1","method":"DELETE","params":{},"query":{},"requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:57","url":"/api/v1/documents/delete/1","userAgent":"PostmanRuntime/7.43.0","userId":"unauthenticated"}
+api-1       | info: Document deleted from S3 {"documentId":1,"environment":"development","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58"}
+api-1       | info: Document soft deleted {"documentId":1,"environment":"development","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58"}
+api-1       | info: Pending jobs cancelled {"count":0,"docId":1,"environment":"development","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58"}
+weaviate-1  | {"action":"requests_total","api":"graphql","build_git_commit":"e29a0bc","build_go_version":"go1.22.12","build_image_tag":"v1.29.1","build_wv_version":"1.29.1","class_name":"","error":"Schema is not configured for mutations","level":"error","msg":"unexpected error","query_type":"","time":"2025-03-21T19:41:58Z"}
+weaviate-1  | {"action":"requests_total","api":"graphql","build_git_commit":"e29a0bc","build_go_version":"go1.22.12","build_image_tag":"v1.29.1","build_wv_version":"1.29.1","class_name":"","error":"Schema is not configured for mutations","level":"error","msg":"unexpected error","query_type":"","time":"2025-03-21T19:41:58Z"}
+api-1       | info: Deleted vectors for job {"environment":"development","jobId":1,"requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58","userId":1}
+api-1       | info: Vectors for job 1 deleted {"environment":"development","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58"}
+weaviate-1  | {"action":"requests_total","api":"graphql","build_git_commit":"e29a0bc","build_go_version":"go1.22.12","build_image_tag":"v1.29.1","build_wv_version":"1.29.1","class_name":"","error":"Schema is not configured for mutations","level":"error","msg":"unexpected error","query_type":"","time":"2025-03-21T19:41:58Z"}
+weaviate-1  | {"action":"requests_total","api":"graphql","build_git_commit":"e29a0bc","build_go_version":"go1.22.12","build_image_tag":"v1.29.1","build_wv_version":"1.29.1","class_name":"","error":"Schema is not configured for mutations","level":"error","msg":"unexpected error","query_type":"","time":"2025-03-21T19:41:58Z"}
+api-1       | info: Deleted vectors for document {"documentId":1,"environment":"development","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58","userId":1}
+api-1       | info: Document deleted successfully {"documentId":1,"environment":"development","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","service":"mysecondbrain.info-BE","timestamp":"2025-03-21 19:41:58"}
+api-1       | info: Outgoing response {"environment":"development","method":"DELETE","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","response":{"code":200,"data":null,"extra":{},"message":"Document deleted successfully","requestId":"4beace9e-d9b9-4eae-a341-c1b7488ddc8f","success":true},"responseTime":"266ms","service":"mysecondbrain.info-BE","statusCode":200,"timestamp":"2025-03-21 19:41:58","url":"/api/v1/documents/delete/1","userId":1}
+                     */
                 }
             }
 
@@ -368,22 +385,23 @@ class DocumentService {
      */
     async #extractPages(fileBuffer, fileType) {
         let pages = 0;
+        let fileData;
         switch (fileType) {
             case 'application/pdf':
-                const pdfData = await pdfParser(fileBuffer);
-                pages = pdfData.numpages;
+                    fileData = await pdfParser(fileBuffer);
+                pages = fileData.numpages;
                 break;
             case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                const docData = await mammoth.extractRawText({ buffer: fileBuffer });
-                pages = Math.ceil(docData.value.split('\n').length / 25); // Simple estimate: 25 lines per page
+                    fileData = await mammoth.extractRawText({ buffer: fileBuffer });
+                pages = Math.ceil(fileData.value.split('\n').length / 25); // Simple estimate: 25 lines per page
                 break;
             case 'application/json':
-                const jsonData = JSON.parse(fileBuffer);
-                pages = Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length;
+                    fileData = JSON.parse(fileBuffer);
+                pages = Array.isArray(fileData) ? fileData.length : Object.keys(fileData).length;
                 break;
             case 'text/plain':
-                const textContent = fileBuffer.toString('utf-8');
-                pages = Math.ceil(textContent.split('\n').length / 40); // Simple estimate: 40 lines per page
+                    fileData = fileBuffer.toString('utf-8');
+                pages = Math.ceil(fileData.split('\n').length / 40); // Simple estimate: 40 lines per page
                 break;
             case 'application/msword':
                 // For DOC files, use a reasonable estimate since extraction is complex

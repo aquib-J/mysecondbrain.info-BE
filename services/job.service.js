@@ -7,6 +7,8 @@ import fs from 'fs';
 import weaviateService from './weaviate/weaviate.service.js';
 import { Op } from 'sequelize';
 import vectorizationService from './vectorization.service.js';
+import * as uuid from 'uuid';
+import openaiService from '../services/openai.service.js';
 
 const logger = new Logger();
 
@@ -188,19 +190,26 @@ class JobService {
     }
 
     /**
-     * Process JSON file
-     * @private
-     * @param {Job} job - Job object
+     * Process a JSON file
+     * @param {Job} job - Job record
      * @param {string} filePath - Path to the local file
      * @param {number} userId - User ID
-     * @returns {Promise<object>} - Processing result
+     * @returns {Promise<Object>} - Processing result
+     * @private
      */
     async _processJsonFile(job, filePath, userId) {
-        try {
-            // Read the JSON file
-            const fileContent = fs.readFileSync(filePath, 'utf8');
-            let jsonData;
+        const operationId = uuid.v4();
+        logger.info('Processing JSON file', {
+            operationId,
+            jobId: job.id,
+            documentId: job.document.id,
+            userId
+        });
 
+        try {
+            // Read and parse JSON file
+            const fileContent = await fs.promises.readFile(filePath, 'utf8');
+            let jsonData;
             try {
                 jsonData = JSON.parse(fileContent);
             } catch (error) {
@@ -208,12 +217,7 @@ class JobService {
                 throw new Error(`Invalid JSON file: ${error.message}`);
             }
 
-            logger.info(`Processing JSON document for job ${job.id}`, {
-                documentId: job.document.id,
-                itemCount: Array.isArray(jsonData) ? jsonData.length : 1
-            });
-
-            // Process the document with vectorization service
+            // Use vectorization service to process JSON data
             const result = await vectorizationService.processJsonData(
                 jsonData,
                 job.id,
@@ -222,14 +226,21 @@ class JobService {
             );
 
             return {
-                vector_count: result.vector_count,
-                weaviate_id: result.weaviate_id
+                success: true,
+                vectorsCount: result.vectorsCount,
+                fieldsCount: result.fieldsCount
             };
         } catch (error) {
-            logger.error('Error processing JSON file', { error, jobId: job.id });
+            logger.error('Error processing JSON file', {
+                operationId,
+                error: error.message,
+                jobId: job.id,
+                documentId: job.document.id
+            });
             throw error;
         }
     }
+
 
     /**
      * Process document file (PDF, DOCX, etc.)
@@ -519,6 +530,51 @@ class JobService {
             return pendingJobs;
         } catch (error) {
             logger.error('Error fetching pending jobs', { error });
+            throw error;
+        }
+    }
+
+    /**
+     * Store vectors in MySQL database
+     * @param {Array<Object>} vectors - Array of vector objects to store
+     * @param {number} [jobId] - Optional job ID for logging
+     * @returns {Promise<Array>} - Array of created vector records
+     * @private
+     */
+    async _storeVectors(vectors, jobId) {
+        const operationId = uuid.v4();
+        logger.info('Storing vectors in MySQL', {
+            operationId,
+            vectorsCount: vectors.length,
+            jobId
+        });
+
+        try {
+            // Make sure all vectors have required fields
+            const preparedVectors = vectors.map(vector => ({
+                ...vector,
+                embedding_id: vector.embedding_id || 1, // Default to OpenAI embedding
+                status: vector.status || 'success',
+                is_active: vector.is_active !== undefined ? vector.is_active : true
+            }));
+
+            // Use bulkCreate for efficiency
+            const createdVectors = await Vector.bulkCreate(preparedVectors);
+
+            logger.info('Vectors stored successfully in MySQL', {
+                operationId,
+                storedCount: createdVectors.length,
+                jobId
+            });
+
+            return createdVectors;
+        } catch (error) {
+            logger.error('Error storing vectors in MySQL', {
+                operationId,
+                error: error.message,
+                vectorsCount: vectors.length,
+                jobId
+            });
             throw error;
         }
     }

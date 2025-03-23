@@ -124,7 +124,7 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        const user = await sequelize.query(`
+        const [user] = await sequelize.query(`
                 select u.id,u.username,u.email,
                 r.id as refresh_token_id,
                 u.password_hash, r.refresh_token,
@@ -137,7 +137,7 @@ const login = async (req, res) => {
                 replacements: { email },
                 type: sequelize.QueryTypes.SELECT
             });
-
+        
         if (!user) {
             logger.warn('Login attempt with non-existent email', {
                 requestId: req.requestId,

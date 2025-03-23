@@ -20,23 +20,17 @@ jobs:
             cd ~/mysecondbrain.info-BE
 
             #set all the env variables here
-            set -o allexport; source ~/.env; set +o allexport
+            set -o allexport; source ~/.env.production; set +o allexport
 
             #stop and remove the current containers
             docker compose -f docker-compose.production.yml down
             
-            #remove all the dangling containers
-            docker rmi $(docker images -f dangling=true -q)
-            
             # Pull the latest code
             git checkout main
             git pull
-            
-            # Build the image locally
-            docker build -t mysecondbrain-api:latest .
-            
+                        
             # Start the containers with the newly built image
-            docker compose -f docker-compose.production.yml up -d
+            docker compose -f docker-compose.production.yml up -d --build
             
             # Clean up unused Docker resources (keep images used in last 24h)
             docker system prune -a --filter "until=24h" -f 

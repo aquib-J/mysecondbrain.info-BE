@@ -43,4 +43,6 @@ try {
     };
 }
 
+//TODO: need to fix this, this is a temp jugaad to bypass the error and most processing is done by the python parser anyways, but this fallback is a total stub :lol
+
 export default pdfParse; 

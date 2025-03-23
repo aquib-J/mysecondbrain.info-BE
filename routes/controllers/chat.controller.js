@@ -3,6 +3,7 @@ import Logger from '../../utils/Logger.js';
 import chatService from '../../services/chats.service.js';
 import Response from '../../utils/Response.js';
 import { Document } from '../../databases/mysql8/db-schemas.js';
+import markdownUtils from '../../utils/markdown.js';
 
 const logger = new Logger();
 
@@ -173,29 +174,37 @@ export const queryDocuments = async (req, res) => {
     }
 };
 
-/**
- * Execute a structured query
- * @param {Express.Request} req - Express request object
- * @param {Express.Response} res - Express response object
- * @returns {Promise<void>}
- */
-export const structuredQuery = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const { query, filters } = req.body;
+// /**
+//  * Execute a structured query
+//  * @param {Express.Request} req - Express request object
+//  * @param {Express.Response} res - Express response object
+//  * @returns {Promise<void>}
+//  */
+// export const structuredQuery = async (req, res) => {
+//     try {
+//         const userId = req.user.id;
+//         const { operation, field, documentId, filter, groupBy } = req.body;
 
-        // Verify user has documents before proceeding
-        if (!await verifyUserHasDocuments(userId, res, 'structured querying')) {
-            return; // Response already sent
-        }
+//         // Verify user has documents before proceeding
+//         if (!await verifyUserHasDocuments(userId, res, 'structured querying')) {
+//             return; // Response already sent
+//         }
 
-        const result = await chatService.structuredQuery(query, userId, filters);
-        return Response.success(res, 'Structured query executed successfully', result);
-    } catch (error) {
-        logger.error('Error executing structured query', { error });
-        return Response.fail(res, error.message);
-    }
-};
+//         // Construct query object matching the expected format in the service
+//         const query = {
+//             operation,
+//             field,
+//             filter,
+//             groupBy
+//         };
+
+//         const result = await chatService.structuredQuery(query, userId, documentId);
+//         return Response.success(res, 'Structured query executed successfully', result);
+//     } catch (error) {
+//         logger.error('Error executing structured query', { error });
+//         return Response.fail(res, error.message);
+//     }
+// };
 
 /**
  * Update chat title
@@ -212,6 +221,66 @@ export const updateChatTitle = async (req, res) => {
         const result = await chatService.updateChatTitle(chatId, userId, title);
         return Response.success(res, 'Chat title updated successfully', result);
     } catch (error) {
+        return Response.fail(res, error.message);
+    }
+};
+
+// /**
+//  * Execute a natural language query on JSON documents
+//  * @param {Express.Request} req - Express request object
+//  * @param {Express.Response} res - Express response object
+//  * @returns {Promise<void>}
+//  */
+// export const naturalLanguageJsonQuery = async (req, res) => {
+//     try {
+//         const userId = req.user.id;
+//         const { query, documentId } = req.body;
+
+//         // Verify user has documents before proceeding
+//         if (!await verifyUserHasDocuments(userId, res, 'natural language querying')) {
+//             return; // Response already sent
+//         }
+
+//         // Call natural language JSON query service
+//         const result = await chatService.naturalLanguageJsonQuery(query, userId, documentId);
+//         return Response.success(res, 'Natural language query executed successfully', result);
+//     } catch (error) {
+//         logger.error('Error executing natural language JSON query', { error });
+//         return Response.fail(res, error.message);
+//     }
+// };
+
+/**
+ * Execute unified JSON query (handles both natural language and structured queries)
+ * @param {Express.Request} req - Express request object
+ * @param {Express.Response} res - Express response object
+ * @returns {Promise<void>}
+ */
+export const jsonQuery = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { query, documentId } = req.body;
+
+        // Verify user has documents before proceeding
+        if (!await verifyUserHasDocuments(userId, res, 'JSON querying')) {
+            return; // Response already sent
+        }
+
+        // Execute unified query
+        const result = await chatService.unifiedJsonQuery({
+            query,
+            userId,
+            documentId
+        });
+
+        // If there's a natural language response, deserialize it for display
+        if (result.naturalLanguageResponse) {
+            result.naturalLanguageResponse = markdownUtils.deserializeMarkdown(result.naturalLanguageResponse);
+        }
+
+        return Response.success(res, 'Query executed successfully', result);
+    } catch (error) {
+        logger.error('Error executing JSON query', { error });
         return Response.fail(res, error.message);
     }
 };

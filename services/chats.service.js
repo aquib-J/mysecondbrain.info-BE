@@ -214,6 +214,7 @@ class ChatService {
                     status: 'active'
                 },
                 order: [['created_at', 'DESC']],
+                limit: 1,
                 transaction
             });
 
@@ -273,7 +274,6 @@ class ChatService {
             }
 
             // Update all chats with this chat_id to be deleted
-            //TODO: need to test if this update works on all the rows fetched.
             const now = new Date();
             await Chat.update(
                 {
@@ -900,6 +900,228 @@ class ChatService {
             );
         } catch (error) {
             logger.error('Error getting chat messages', { chatId, userId, error: error.message });
+            throw error;
+        }
+    }
+
+    // /**
+    //  * Process natural language query on JSON documents
+    //  * @param {string} query - Natural language query string
+    //  * @param {number} userId - User ID
+    //  * @param {number} documentId - Document ID
+    //  * @returns {Promise<Object>}
+    //  */
+    // async naturalLanguageJsonQuery(query, userId, documentId) {
+    //     try {
+    //         // Verify document exists and belongs to user
+    //         const document = await Document.findOne({
+    //             where: {
+    //                 id: documentId,
+    //                 uploaded_by: userId,
+    //                 status: 'active',
+    //                 file_type: 'json'
+    //             }
+    //         });
+
+    //         if (!document) {
+    //             throw new Error('JSON document not found');
+    //         }
+
+    //         // Step 1: Get document fields to understand the structure
+    //         const documentFields = await weaviateService.getJsonDocumentFields(documentId, userId);
+
+    //         // Step 2: Parse natural language into structured query intent
+    //         const queryIntent = await this.#parseQueryIntent(query, documentFields);
+
+    //         // Step 3: If it's an aggregation query, execute as structured query
+    //         if (queryIntent.type === 'aggregation') {
+    //             const structuredQueryParams = {
+    //                 operation: queryIntent.operation,
+    //                 field: queryIntent.field,
+    //                 filter: queryIntent.filter,
+    //                 groupBy: queryIntent.groupBy
+    //             };
+
+    //             return await this.structuredQuery(structuredQueryParams, userId, documentId);
+    //         }
+
+    //         // Step 4: If it's a search query, perform semantic search
+    //         const searchResults = await weaviateService.semanticJsonSearch(
+    //             query,
+    //             documentId,
+    //             userId,
+    //             queryIntent.filter
+    //         );
+
+    //         // Step 5: Format response
+    //         return {
+    //             results: searchResults.results,
+    //             count: searchResults.count,
+    //             query: {
+    //                 original: query,
+    //                 intent: queryIntent
+    //             },
+    //             naturalLanguageResponse: markdownUtils.serializeMarkdown(
+    //                 this.#generateNLResponse(searchResults, query, queryIntent)
+    //             )
+    //         };
+    //     } catch (error) {
+    //         logger.error('Error processing natural language JSON query', { error, userId, documentId, query });
+    //         throw error;
+    //     }
+    // }
+
+//     /**
+//      * Parse natural language query into structured intent
+//      * @param {string} query - The natural language query
+//      * @param {Array} documentFields - Available fields in the document
+//      * @returns {Object} - Query intent
+//      * @private
+//      */
+//     async #parseQueryIntent(query, documentFields) {
+//         // Request LLM to parse the natural language query
+//         const prompt = `
+// Parse the following natural language query about a JSON document into a structured intent.
+// Available fields in the document: ${documentFields.map(f => f.path).join(', ')}
+
+// Query: "${query}"
+
+// Respond with a JSON object containing the query intent in this format:
+// {
+//   "type": "aggregation" | "search",
+//   "operation": "max" | "min" | "avg" | "sum" | "count" | null,
+//   "field": "field_name" | null,
+//   "filter": { field: value } | null,
+//   "groupBy": "field_name" | null
+// }
+// `;
+
+//         try {
+//             // Call your preferred LLM service
+//             const llmResponse = await aiService.generateText(prompt, {
+//                 temperature: 0.1,
+//                 max_tokens: 500
+//             });
+
+//             // Extract JSON from the response
+//             const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+//             if (!jsonMatch) {
+//                 throw new Error('Failed to parse LLM response');
+//             }
+
+//             const intent = JSON.parse(jsonMatch[0]);
+
+//             // Validate the parsed intent
+//             if (!['aggregation', 'search'].includes(intent.type)) {
+//                 throw new Error('Invalid intent type');
+//             }
+
+//             if (intent.type === 'aggregation') {
+//                 if (!['max', 'min', 'avg', 'sum', 'count'].includes(intent.operation)) {
+//                     throw new Error('Invalid aggregation operation');
+//                 }
+
+//                 if (!intent.field) {
+//                     throw new Error('Field is required for aggregation');
+//                 }
+//             }
+
+//             return intent;
+//         } catch (error) {
+//             logger.error('Error parsing query intent', { error, query });
+//             // Fallback to simple search intent
+//             return {
+//                 type: 'search',
+//                 operation: null,
+//                 field: null,
+//                 filter: null,
+//                 groupBy: null
+//             };
+//         }
+//     }
+
+    // /**
+    //  * Generate natural language response for search results
+    //  * @param {Object} searchResults - Results from semantic search
+    //  * @param {string} query - Original query
+    //  * @param {Object} queryIntent - Parsed query intent
+    //  * @returns {string} - Natural language response
+    //  * @private
+    //  */
+    // #generateNLResponse(searchResults, query, queryIntent) {
+    //     const { results, count } = searchResults;
+
+    //     if (count === 0) {
+    //         return `No results found for: "${query}"`;
+    //     }
+
+    //     let response = `I found ${count} ${count === 1 ? 'result' : 'results'} for: "${query}"\n\n`;
+
+    //     if (queryIntent.type === 'search') {
+    //         // Format first few results
+    //         const topResults = results.slice(0, 3);
+    //         topResults.forEach((result, i) => {
+    //             response += `${i + 1}. `;
+
+    //             // Add key information from the result
+    //             const keyInfo = Object.entries(result)
+    //                 .filter(([key]) => !['id', '_additional'].includes(key))
+    //                 .slice(0, 5) // Limit to first 5 fields
+    //                 .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    //                 .join(', ');
+
+    //             response += keyInfo + '\n';
+    //         });
+
+    //         if (count > 3) {
+    //             response += `\n...and ${count - 3} more results.`;
+    //         }
+    //     }
+
+    //     return response;
+    // }
+
+    /**
+     * Process unified JSON query - handles both natural language and structured queries
+     * @param {Object} params - Query parameters
+     * @param {string|Object} params.query - Natural language query string or structured query object
+     * @param {number} params.userId - User ID
+     * @param {number} params.documentId - Document ID
+     * @returns {Promise<Object>} - Query results with natural language response
+     */
+    async unifiedJsonQuery(params) {
+        try {
+            const { query, userId, documentId } = params;
+
+            // Verify document exists and belongs to user
+            const document = await Document.findOne({
+                where: {
+                    id: documentId,
+                    uploaded_by: userId,
+                    status: 'active',
+                    file_type: 'json'
+                }
+            });
+
+            if (!document) {
+                throw new Error('JSON document not found');
+            }
+
+            // Use the enhanced unified query endpoint in Weaviate service
+            const result = await weaviateService.unifiedJsonQuery({
+                query,
+                documentId,
+                userId
+            });
+
+            // Process result to ensure markdown is properly formatted
+            if (result.naturalLanguageResponse) {
+                result.naturalLanguageResponse = markdownUtils.serializeMarkdown(result.naturalLanguageResponse);
+            }
+
+            return result;
+        } catch (error) {
+            logger.error('Error processing unified JSON query', { error, userId, documentId });
             throw error;
         }
     }
