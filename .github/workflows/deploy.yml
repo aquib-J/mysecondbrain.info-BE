@@ -19,134 +19,36 @@ jobs:
             # Navigate to the application directory
             cd ~/mysecondbrain.info-BE
 
-            # Check if environment file exists in project directory instead of home
-            if [ -f ".env.production" ]; then
-              # Use project directory .env.production
-              set -o allexport; source .env.production; set +o allexport
-            else
-              # Skip if not found and continue
-              echo "WARNING: .env.production not found, continuing without environment variables"
-            fi
+            # Load environment if exists or continue
+            [ -f ".env.production" ] && set -o allexport; source .env.production; set +o allexport
 
             # Pull the latest code
             git checkout main
             git pull
             
-            # Make all scripts executable
-            chmod +x ./nginx/init-letsencrypt.sh
-            chmod +x ./nginx/renew-certs.sh
-            chmod +x ./nginx/setup-renewal-cron.sh
+            # Make scripts executable
+            chmod +x ./nginx/init-letsencrypt.sh ./nginx/renew-certs.sh ./nginx/setup-renewal-cron.sh
             
-            # Fix Nginx configuration - create or update nginx.conf
-            mkdir -p ./nginx/templates
-            cat > ./nginx/templates/nginx.conf.template << 'EOF'
-            user nginx;
-            worker_processes auto;
-            error_log /var/log/nginx/error.log warn;
-            pid /var/run/nginx.pid;
-
-            events {
-                worker_connections 1024;
-            }
-
-            http {
-                include /etc/nginx/mime.types;
-                default_type application/octet-stream;
-                log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                              '$status $body_bytes_sent "$http_referer" '
-                              '"$http_user_agent" "$http_x_forwarded_for"';
-                access_log /var/log/nginx/access.log main;
-                sendfile on;
-                keepalive_timeout 65;
-                
-                # Add DNS resolver
-                resolver 8.8.8.8 valid=30s;
-
-                # SSL Configuration
-                ssl_protocols TLSv1.2 TLSv1.3;
-                ssl_prefer_server_ciphers on;
-                ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
-                ssl_session_cache shared:SSL:10m;
-                ssl_session_timeout 10m;
-
-                # Redirect HTTP to HTTPS
-                server {
-                    listen 80;
-                    server_name ${DOMAIN};
-                    
-                    location /.well-known/acme-challenge/ {
-                        root /var/www/certbot;
-                    }
-                    
-                    location / {
-                        return 301 https://$host$request_uri;
-                    }
-                }
-
-                # HTTPS Server
-                server {
-                    listen 443 ssl;
-                    server_name ${DOMAIN};
-                    
-                    # SSL Certificate files
-                    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-                    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
-                    
-                    # Additional Security Headers
-                    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-                    add_header X-Content-Type-Options nosniff;
-                    add_header X-Frame-Options SAMEORIGIN;
-                    add_header X-XSS-Protection "1; mode=block";
-                    
-                    # Proxy API requests to Node.js application
-                    location / {
-                        proxy_pass http://api:3500;
-                        proxy_http_version 1.1;
-                        proxy_set_header Upgrade $http_upgrade;
-                        proxy_set_header Connection 'upgrade';
-                        proxy_set_header Host $host;
-                        proxy_set_header X-Real-IP $remote_addr;
-                        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                        proxy_set_header X-Forwarded-Proto $scheme;
-                        proxy_cache_bypass $http_upgrade;
-                    }
-                }
-            }
-            EOF
-            echo "Updated Nginx template configuration"
-            
-            # Check if SSL certificates have been set up
+            # Create/update SSL config if needed
             if [ ! -f ".env.ssl" ]; then
-              echo "SSL environment file not found. Creating basic file..."
-              # Create simple .env.ssl with proper domain variable
+              echo "Creating SSL configuration..."
               echo "DOMAIN=api.mysecondbrain.info" > .env.ssl
               echo "EMAIL=aquib.jansher@gmail.com" >> .env.ssl
               echo "STAGING=0" >> .env.ssl
               
-              # Create required directories
-              mkdir -p ./nginx/logs
-              mkdir -p ./data/certbot/www
-              mkdir -p ./data/certbot/conf
+              mkdir -p ./nginx/logs ./data/certbot/www ./data/certbot/conf
               
-              # Run the initialization script to set up SSL certificates
+              # Run initial SSL setup
               ./nginx/init-letsencrypt.sh
-              
-              # Set up automatic renewal cron job
               ./nginx/setup-renewal-cron.sh
-              
-              echo "Initial SSL setup complete."
             else
-              echo "SSL is already set up. Using existing configuration."
-              
-              # Check if any certificates need renewal
+              # Renew certificates if necessary
               ./nginx/renew-certs.sh
               
-              # Stop the current containers
+              # Restart containers
               docker compose --env-file .env.ssl -f docker-compose.production.yml down
-              
-              # Start the containers with SSL configuration
               docker compose --env-file .env.ssl -f docker-compose.production.yml up -d --build
             fi
             
-            # Clean up unused Docker resources (keep images used in last 24h)
+            # Clean up
             docker system prune -a --filter "until=24h" -f 
