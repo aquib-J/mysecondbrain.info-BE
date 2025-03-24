@@ -20,7 +20,7 @@ jobs:
             cd ~/mysecondbrain.info-BE
 
             # Set application environment variables
-            set -o allexport; source ~/.env.production; set +o allexport
+            set -o allexport; source .env.production; set +o allexport
 
             # Pull the latest code
             git checkout main
