@@ -15,29 +15,15 @@ if ! docker compose --env-file $env_file -f docker-compose.production.yml ps | g
   sleep 5
 fi
 
-# Create temporary override for local certificates
-cat > docker-compose.override.yml <<EOF
-version: '3'
-services:
-  nginx:
-    volumes:
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
-  certbot:
-    volumes:
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
-EOF
-
-# Run renewal
+# Run renewal directly with Docker run
 echo "Running certificate renewal..."
-docker compose --env-file $env_file -f docker-compose.production.yml -f docker-compose.override.yml run --rm \
-  certbot renew
+docker run --rm \
+  -v "$(pwd)/data/certbot/conf:/etc/letsencrypt" \
+  -v "$(pwd)/data/certbot/www:/var/www/certbot" \
+  --network mysecondbraininfo-be_app-network \
+  certbot/certbot:latest renew
 
 # Reload Nginx to use the new certificates
 docker compose --env-file $env_file -f docker-compose.production.yml exec nginx nginx -s reload
-
-# Clean up
-rm docker-compose.override.yml
 
 echo "=== Certificate renewal complete ===" 

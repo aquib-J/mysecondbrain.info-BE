@@ -67,8 +67,8 @@ services:
     image: nginx:stable-alpine
     volumes:
       - ./nginx/templates:/etc/nginx/templates
-      - certbot_www:/var/www/certbot
-      - certbot_conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+      - ./data/certbot/conf:/etc/letsencrypt
       - ./nginx/logs:/var/log/nginx
     ports:
       - '80:80'
@@ -84,29 +84,10 @@ services:
     environment:
       - DOMAIN=${DOMAIN:-api.mysecondbrain.info}
 
-  certbot:
-    image: certbot/certbot:latest
-    volumes:
-      - certbot_www:/var/www/certbot
-      - certbot_conf:/etc/letsencrypt
-    depends_on:
-      - nginx
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-    networks:
-      - app-network
-    restart: unless-stopped
-    command: >
-      certonly --webroot --webroot-path=/var/www/certbot 
-      --email ${EMAIL:-aquib.jansher@gmail.com} 
-      --agree-tos --no-eff-email 
-      -d ${DOMAIN:-api.mysecondbrain.info}
-
 networks:
   app-network:
     driver: bridge
 
 volumes:
   weaviate_data:
-  redis_data:
-  certbot_www:
-  certbot_conf: 
+  redis_data: 
