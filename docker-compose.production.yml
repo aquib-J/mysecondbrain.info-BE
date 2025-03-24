@@ -38,25 +38,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # MySQL Database
-  mysql:
-    image: mysql:8
-    ports:
-      - "3306:3306"
-    environment:
-      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-      MYSQL_DATABASE: RAG_system
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Node.js Express Application
   api:
     build:
@@ -67,11 +48,9 @@ services:
     depends_on:
       - weaviate
       - redis
-      - mysql
     env_file:
       - .env.production
     environment:
-      DB_URI: mysql://root@mysql:3306/RAG_system
       REDIS_URL: redis://redis:6379
       WEAVIATE_HOST: weaviate:8080
       WEAVIATE_SCHEME: http
@@ -129,6 +108,5 @@ networks:
 volumes:
   weaviate_data:
   redis_data:
-  mysql_data:
   certbot_www:
   certbot_conf: 

@@ -14,10 +14,10 @@ const sequelize = new Sequelize(DB_URI, {
     },
     logging: (msg) => logger.debug(msg),
     pool: {
-        max: 5,
-        min: 0,
-        acquire: 30000,
-        idle: 10000
+        max: 10, // Maximum number of connection in pool
+        min: 0, // Minimum number of connection in pool
+        acquire: 30000, // Maximum time, in milliseconds, that pool will try to get connection before throwing error
+        idle: 10000, // Maximum time, in milliseconds, that a connection can be idle before being released
     }
 });
 
