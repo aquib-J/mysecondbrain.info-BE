@@ -253,6 +253,91 @@ For a faster and more consistent setup, use Docker:
    ```
 For detailed instructions on deployment, scaling, and maintenance using Docker, see our comprehensive [Deployment Guide](./docs/deployment.md).
 
+## Production Deployment with SSL
+
+For production deployment with HTTPS support, we've integrated Certbot with Nginx to provide automatic SSL certificate generation and renewal.
+
+### Prerequisites
+
+- A registered domain name pointing to your server IP address
+- Ports 80 and 443 accessible from the internet
+- Docker and Docker Compose installed
+
+### Environment Variables
+
+You can customize the SSL setup using these environment variables:
+
+- `DOMAIN`: Your domain name (default: api.mysecondbrain.info)
+- `EMAIL`: Email for Let's Encrypt registration (default: aquib.jansher@gmail.com)
+- `STAGING`: Set to 1 for testing (avoid rate limits) or 0 for production
+
+### SSL Setup
+
+1. **Initialize SSL certificates**:
+
+   ```bash
+   # Optional: Set custom domain and email
+   export DOMAIN=your-domain.com
+   export EMAIL=your-email@example.com
+   
+   # Run the initialization script
+   ./nginx/init-letsencrypt.sh
+   ```
+
+   This script will:
+   - Create temporary self-signed certificates
+   - Start Nginx with these certificates
+   - Use Certbot to request proper Let's Encrypt certificates
+   - Reload Nginx to use the new certificates
+   - Create a `.env.ssl` file for future use
+
+2. **Start the application with SSL**:
+
+   ```bash
+   # Using the environment file created during initialization
+   docker compose --env-file .env.ssl -f docker-compose.production.yml up -d
+   ```
+
+3. **Certificate renewal**:
+
+   Certificates are automatically renewed by the Certbot container every 12 hours.
+   For manual renewal:
+
+   ```bash
+   ./nginx/renew-certs.sh
+   ```
+
+### SSL Architecture
+
+The SSL implementation consists of:
+
+1. **Nginx Container**:
+   - Terminates TLS connections
+   - Serves as a reverse proxy to the API
+   - Handles HTTP to HTTPS redirection
+   - Exposes paths needed for certificate validation
+
+2. **Certbot Container**:
+   - Obtains and renews SSL certificates
+   - Uses the webroot plugin for domain validation
+   - Stores certificates in a Docker volume shared with Nginx
+
+3. **Configuration Files**:
+   - `nginx/templates/nginx.conf.template`: Template for Nginx configuration with environment variable substitution
+   - `nginx/init-letsencrypt.sh`: Script for initial certificate setup
+   - `nginx/renew-certs.sh`: Script for manual certificate renewal
+
+### Security Features
+
+Our SSL implementation includes:
+
+- TLS 1.2/1.3 only (older protocols disabled)
+- Strong cipher suite configuration
+- HTTP Strict Transport Security (HSTS)
+- OCSP stapling for certificate validation
+- Modern security headers (X-Frame-Options, Content-Security-Policy, etc.)
+- Automatic redirection from HTTP to HTTPS
+
 ## System Maintenance
 
 If you're setting up or managing the system, start with:

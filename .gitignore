@@ -80,6 +80,7 @@ web_modules/
 .env.development
 .env.production
 .env.test
+.env.ssl
 
 # Allow example environment files
 !.env.*.example
@@ -160,3 +161,14 @@ backup/scripts/
 
 # Docker volumes
 docker-volumes/
+
+# Nginx
+
+~/nginx/ssl/*
+~/nginx/logs/*
+
+# SSL certificates
+~/data/certbot/conf/live/api.mysecondbrain.info/fullchain.pem
+~/data/certbot/conf/live/api.mysecondbrain.info/privkey.pem
+
+

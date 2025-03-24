@@ -100,10 +100,14 @@ mkdir -p ~/logs ~/data
 echo -e "${GREEN}=== Installation Complete! ===${NC}"
 echo -e "${YELLOW}NOTE: Some changes require logging out and back in to take effect.${NC}"
 echo "You may want to run: source ~/.bashrc"
-echo ""
+
+
+
+
 echo "Next steps:"
 echo "1. Create ssh key and save the updated ssh key in github settings -> under SSH and GPG keys"
 echo "2. Install Github cli client and login to github using: gh auth login"
 echo "3. Clone your repository: gh repo clone yourusername/mysecondbrain.info-BE and cd mysecondbrain.info-BE"
 echo "4. Create .env.production file and add the required variables"
-echo "5. Run Docker Compose: docker-compose -f docker-compose.production.yml up -d"
+echo "5. Just run the nginx/init-letsencrypt.sh script to setup the SSL certificates"
+echo "6. Run the docker-compose.production.yml file to start the containers"

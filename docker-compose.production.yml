@@ -84,6 +84,44 @@ services:
       timeout: 5s
       retries: 5
 
+  nginx:
+    image: nginx:stable-alpine
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+      - ./nginx/logs:/var/log/nginx
+    ports:
+      - '80:80'
+      - '443:443'
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: "/bin/sh -c 'envsubst \"$$NGINX_DOMAIN\" < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g \"daemon off;\"'"
+    environment:
+      - NGINX_DOMAIN=${DOMAIN:-api.mysecondbrain.info}
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+    depends_on:
+      - nginx
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - app-network
+    restart: unless-stopped
+    command: certonly --webroot --webroot-path=/var/www/certbot --email ${EMAIL:-aquib.jansher@gmail.com} --agree-tos --no-eff-email -d ${DOMAIN:-api.mysecondbrain.info}
+
 networks:
   app-network:
     driver: bridge
@@ -91,4 +129,6 @@ networks:
 volumes:
   weaviate_data:
   redis_data:
-  mysql_data: 
+  mysql_data:
+  certbot_www:
+  certbot_conf: 
