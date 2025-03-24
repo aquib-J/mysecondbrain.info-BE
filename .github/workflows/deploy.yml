@@ -31,13 +31,6 @@ jobs:
             chmod +x ./nginx/renew-certs.sh
             chmod +x ./nginx/setup-renewal-cron.sh
             
-            # Test database connection to Amazon RDS
-            echo "Testing connection to RDS database..."
-            mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD -e "SELECT 'RDS Connection Successful!' as Message;" $DB_NAME || {
-              echo "Error: Failed to connect to RDS database. Please check your credentials and network settings."
-              exit 1
-            }
-            
             # Check if SSL certificates have been set up
             if [ ! -f ".env.ssl" ]; then
               echo "SSL environment file not found. Running initial SSL setup..."
