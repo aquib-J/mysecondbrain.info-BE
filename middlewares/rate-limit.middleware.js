@@ -13,40 +13,68 @@ const logger = new Logger();
  */
 class RedisStore {
     constructor(windowMs) {
-        this.client = redisConnect;
+        this.client = redisConnect.getClient(); // Get the actual Redis client
         this.prefix = 'rl:';
         this.windowMs = windowMs || 60 * 1000; // Default to 1 minute if not provided
+
+        // Ensure Redis client is ready
+        if (!this.client || !this.client.isReady) {
+            logger.error('Redis client not ready');
+            throw new Error('Redis client not ready');
+        }
     }
 
     /**
      * Increment key and get count
      * @param {string} key - The key to increment
-     * @param {Object} options - Options object
      * @returns {Promise<Object>} - The incremented count and TTL
      */
     async increment(key) {
         const redisKey = this.prefix + key;
+        const now = Date.now();
 
         try {
-            // Increment key
-            const count = await this.client.incr(redisKey);
+            // Use multi to ensure atomic operations
+            const multi = this.client.multi();
 
-            // Set expiry if first hit
-            if (count === 1) {
+            // Increment the counter
+            multi.incr(redisKey);
+
+            // Get TTL for existing key
+            multi.ttl(redisKey);
+
+            // Execute both commands
+            const [count, ttl] = await multi.exec();
+
+            // If this is a new key (count === 1) or TTL is -1 (no expiry set)
+            if (count[1] === 1 || ttl[1] === -1) {
                 await this.client.expire(redisKey, Math.ceil(this.windowMs / 1000));
+
+                return {
+                    totalHits: 1,
+                    resetTime: new Date(now + this.windowMs)
+                };
             }
 
-            // Get remaining TTL
-            const ttl = await this.client.ttl(redisKey);
+            // Calculate reset time based on TTL
+            const resetTime = new Date(now + (ttl[1] * 1000));
 
             return {
-                totalHits: count,
-                resetTime: Date.now() + (ttl * 1000)
+                totalHits: count[1],
+                resetTime: resetTime
             };
         } catch (err) {
-            logger.error('Redis store error on increment', { key, error: err.message });
-            // Fallback to success in case of Redis error
-            return { totalHits: 0, resetTime: Date.now() };
+            logger.error('Redis store error on increment', {
+                key,
+                error: err.message,
+                stack: err.stack
+            });
+
+            // Return valid fallback values that won't trigger validation errors
+            return {
+                totalHits: 1,
+                resetTime: new Date(now + this.windowMs)
+            };
         }
     }
 
@@ -58,12 +86,24 @@ class RedisStore {
     async decrement(key) {
         const redisKey = this.prefix + key;
         try {
-            const count = await this.client.get(redisKey);
-            if (count && parseInt(count) > 0) {
+            const multi = this.client.multi();
+
+            // Get current value
+            multi.get(redisKey);
+
+            // Execute command
+            const [currentValue] = await multi.exec();
+
+            // Only decrement if value exists and is greater than 0
+            if (currentValue[1] && parseInt(currentValue[1]) > 0) {
                 await this.client.decr(redisKey);
             }
         } catch (err) {
-            logger.error('Redis store error on decrement', { key, error: err.message });
+            logger.error('Redis store error on decrement', {
+                key,
+                error: err.message,
+                stack: err.stack
+            });
         }
     }
 
@@ -77,28 +117,55 @@ class RedisStore {
         try {
             await this.client.del(redisKey);
         } catch (err) {
-            logger.error('Redis store error on reset', { key, error: err.message });
+            logger.error('Redis store error on reset', {
+                key,
+                error: err.message,
+                stack: err.stack
+            });
         }
     }
 
     /**
-     * Reset all keys (not implemented for Redis)
+     * Reset all keys with this prefix
      * @returns {Promise<void>}
      */
     async resetAll() {
-        logger.warn('resetAll called on Redis store - operation not supported');
+        try {
+            // Get all keys with our prefix
+            const keys = await this.client.keys(this.prefix + '*');
+            if (keys.length > 0) {
+                await this.client.del(keys);
+                logger.info(`Reset ${keys.length} rate limit keys`);
+            }
+        } catch (err) {
+            logger.error('Redis store error on resetAll', {
+                error: err.message,
+                stack: err.stack
+            });
+        }
     }
 }
 
-// Create appropriate store based on environment
+/**
+ * Create appropriate store based on environment
+ * @param {Object} options - Rate limiter options
+ * @returns {Object} - Configured rate limiter middleware
+ */
 const createLimiter = (options) => {
     const windowMs = options.windowMs || 60 * 1000; // Default: 1 minute
     let store;
 
     // Use Redis in production, memory in development
     if (USE_REDIS === 'true' && NODE_ENV === 'production') {
-        store = new RedisStore(windowMs);
-        logger.info('Using Redis store for rate limiting');
+        try {
+            store = new RedisStore(windowMs);
+            logger.info('Using Redis store for rate limiting');
+        } catch (err) {
+            logger.error('Failed to create Redis store, falling back to memory store', {
+                error: err.message
+            });
+            store = new MemoryStore();
+        }
     } else {
         store = new MemoryStore();
         logger.info('Using in-memory store for rate limiting');
@@ -120,7 +187,7 @@ const createLimiter = (options) => {
     logger.info(`Rate limiter created`, {
         windowMs: options.windowMs,
         max: options.max,
-        storeType: USE_REDIS === 'true' && NODE_ENV === 'production' ? 'redis' : 'memory',
+        storeType: store instanceof RedisStore ? 'redis' : 'memory',
         limitType: options.limitType || 'general'
     });
 

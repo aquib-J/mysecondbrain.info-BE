@@ -256,28 +256,6 @@ export const queryDocumentsValidation = (req, res, next) => {
 //     validateRequest
 // ];
 
-//TODO: remvoe this validation method, not used anywhere
-// Validation for document search
-const searchDocumentValidation = celebrate({
-    [Segments.PARAMS]: Joi.object().keys({
-        documentId: Joi.number().integer().required().messages({
-            'any.required': 'Document ID is required',
-            'number.base': 'Document ID must be a number',
-            'number.integer': 'Document ID must be an integer'
-        })
-    }),
-    [Segments.QUERY]: Joi.object().keys({
-        query: Joi.string().required().messages({
-            'any.required': 'Search query is required'
-        }),
-        limit: Joi.number().integer().min(1).max(100).default(10).messages({
-            'number.base': 'Limit must be a number',
-            'number.integer': 'Limit must be an integer',
-            'number.min': 'Limit must be at least 1',
-            'number.max': 'Limit cannot exceed 100'
-        })
-    })
-});
 
 /**
  * Validate update chat title request
