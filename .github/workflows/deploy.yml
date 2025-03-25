@@ -32,7 +32,17 @@ jobs:
             # Cleanup any stray certbot containers
             echo "Cleaning up stray containers..."
             docker ps | grep certbot | awk '{print $1}' | xargs -r docker rm -f
-            docker ps -a | grep "certbot-run-" | awk '{print $1}' | xargs -r docker rm -f
+            docker ps -a | grep -E "certbot-run-|certbot_run" | awk '{print $1}' | xargs -r docker rm -f
+            
+            # Validate DNS resolution
+            echo "Checking DNS resolution for api.mysecondbrain.info..."
+            if ! host api.mysecondbrain.info; then
+              echo "WARNING: Domain api.mysecondbrain.info does not resolve correctly!"
+              echo "Please ensure DNS is properly configured to point to this server's IP."
+              IP_ADDRESS=$(curl -s https://ipinfo.io/ip)
+              echo "This server's public IP is: $IP_ADDRESS"
+              echo "DNS should point to this IP."
+            fi
             
             # Create/update SSL config if needed
             if [ ! -f ".env.ssl" ]; then
@@ -41,7 +51,9 @@ jobs:
               echo "EMAIL=aquib.jansher@gmail.com" >> .env.ssl
               echo "STAGING=0" >> .env.ssl
               
-              mkdir -p ./nginx/logs ./data/certbot/www ./data/certbot/conf
+              # Create required directories with proper permissions
+              mkdir -p ./nginx/logs 
+              mkdir -p ./data/certbot/conf
               
               # Stop existing containers
               docker compose -f docker-compose.production.yml down
@@ -50,22 +62,22 @@ jobs:
               ./nginx/init-letsencrypt.sh
               ./nginx/setup-renewal-cron.sh
             else
-              # Check for certificate expiration (30 days)
-              if [ ! -d "./data/certbot/conf/live" ] || [ $(find ./data/certbot/conf/live -name "cert.pem" -mtime +30 | wc -l) -gt 0 ]; then
-                echo "Certificates need renewal..."
+              # Check certificate validity
+              if [ ! -f "./data/certbot/conf/live/api.mysecondbrain.info/cert.pem" ] || 
+                 ! openssl x509 -checkend 2592000 -noout -in "./data/certbot/conf/live/api.mysecondbrain.info/cert.pem" 2>/dev/null; then
+                echo "Certificates missing or expiring soon. Running renewal..."
                 ./nginx/renew-certs.sh
+              else
+                echo "Certificates are valid for at least 30 more days."
+                
+                # Restart containers if they need to be updated
+                docker compose --env-file .env.ssl -f docker-compose.production.yml up -d
               fi
-              
-              # Restart containers
-              docker compose --env-file .env.ssl -f docker-compose.production.yml down
-              docker compose --env-file .env.ssl -f docker-compose.production.yml up -d
             fi
             
-            # Verify and fix SSL setup if needed
-            if [ ! -f "./data/certbot/conf/live/api.mysecondbrain.info/fullchain.pem" ]; then
-              echo "SSL certificates missing. Running emergency setup..."
-              ./nginx/init-letsencrypt.sh
-            fi
+            # Verify the site is working
+            echo "Verifying HTTPS access..."
+            curl -k https://api.mysecondbrain.info/ || echo "HTTPS access not yet available - this is normal for first-time setup."
             
             # Clean up
             docker system prune -a --filter "until=24h" -f 
