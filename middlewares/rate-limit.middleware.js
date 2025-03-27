@@ -138,6 +138,7 @@ class RedisStore {
 
         // If Redis is not connected, return default values
         if (!this.isConnected()) {
+            logger.debug('Redis not connected, using in-memory fallback for rate limiting', { key });
             return {
                 totalHits: 1,
                 resetTime: new Date(now + this.windowMs)
@@ -145,43 +146,38 @@ class RedisStore {
         }
 
         try {
-            // Use multi to ensure atomic operations
-            const multi = this.client.multi();
+            // Use INCR to increment the counter and get the new value
+            let countStr = await this.client.incr(redisKey);
 
-            // Increment the counter
-            multi.incr(redisKey);
-
-            // Get TTL for existing key
-            multi.ttl(redisKey);
-
-            // Execute both commands
-            const results = await multi.exec();
-
-            if (!results || results.length < 2) {
-                throw new Error('Redis multi execution failed');
+            // Handle unexpected response types
+            let count = 1;
+            if (typeof countStr === 'number') {
+                count = countStr;
+            } else if (typeof countStr === 'string') {
+                count = parseInt(countStr, 10);
+                if (isNaN(count) || count < 1) {
+                    count = 1; // Fallback to safe value
+                }
             }
 
-            const [incrResult, ttlResult] = results;
+            logger.debug('Rate limit incremented', {
+                key: redisKey,
+                count,
+                type: typeof countStr
+            });
 
-            if (!incrResult || !ttlResult) {
-                throw new Error('Invalid Redis response');
-            }
+            // Get TTL for the key
+            let ttl = await this.client.ttl(redisKey);
 
-            const count = parseInt(incrResult[1]);
-            const ttl = parseInt(ttlResult[1]);
-
-            // Ensure count is a valid number
-            if (isNaN(count) || count < 0) {
-                throw new Error('Invalid count from Redis');
-            }
-
-            // If this is a new key (count === 1) or TTL is -1 (no expiry set)
-            if (count === 1 || ttl === -1) {
+            // If this is a new key (count === 1) or TTL is -1 (no expiry set) or -2 (key doesn't exist)
+            if (count === 1 || ttl < 0) {
                 await this.client.expire(redisKey, Math.ceil(this.windowMs / 1000));
-                return {
-                    totalHits: 1,
-                    resetTime: new Date(now + this.windowMs)
-                };
+                ttl = Math.ceil(this.windowMs / 1000);
+
+                logger.debug('Set expiry on rate limit key', {
+                    key: redisKey,
+                    ttl: Math.ceil(this.windowMs / 1000)
+                });
             }
 
             // Calculate reset time based on TTL

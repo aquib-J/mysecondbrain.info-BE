@@ -245,39 +245,87 @@ async function getChatStats(fromTime, toTime) {
  */
 async function sendMISReport(reportData) {
     try {
+        // Sanitize reportData to ensure all required properties exist and have default values
+        const sanitizedData = {
+            timeRange: {
+                from: reportData.timeRange?.from || new Date(Date.now() - 2 * 60 * 60 * 1000),
+                to: reportData.timeRange?.to || new Date()
+            },
+            newUsers: Array.isArray(reportData.newUsers) ? reportData.newUsers : [],
+            newDocuments: Array.isArray(reportData.newDocuments) ? reportData.newDocuments : [],
+            jobs: Array.isArray(reportData.jobs) ? reportData.jobs : [],
+            vectors: reportData.vectors || { totalCount: 0, successCount: 0, inProgressCount: 0, failedCount: 0 },
+            chats: reportData.chats || { totalCount: 0, byTitle: [], byUser: [] }
+        };
+
         if (NODE_ENV !== 'production') {
             logger.info('MIS report would be sent in production mode', {
                 recipient: MIS_REPORT_RECIPIENT,
                 reportSummary: {
-                    newUsers: reportData.newUsers.length,
-                    newDocuments: reportData.newDocuments.length,
-                    newJobs: reportData.jobs.length
+                    newUsers: sanitizedData.newUsers.length,
+                    newDocuments: sanitizedData.newDocuments.length,
+                    newJobs: sanitizedData.jobs.length
                 }
             });
             return true;
         }
 
+        // Format timestamps for display (preventing errors if dates are invalid)
+        const formatDateTime = (timestamp) => {
+            try {
+                const date = new Date(timestamp);
+                if (isNaN(date.getTime())) return 'Invalid date';
+                return date.toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            } catch (e) {
+                return 'Invalid date';
+            }
+        };
+
         // Generate the HTML content from the template
-        const htmlContent = misReportEmailTemplate(reportData);
+        const htmlContent = misReportEmailTemplate(sanitizedData);
+
+        // Generate a simple plain text version for better deliverability
+        const textContent = `
+MIS Report - ${formatDateTime(new Date())}
+
+Report Period: ${formatDateTime(sanitizedData.timeRange.from)} to ${formatDateTime(sanitizedData.timeRange.to)}
+
+SUMMARY:
+- New Users: ${sanitizedData.newUsers.length}
+- New Documents: ${sanitizedData.newDocuments.length}
+- New Jobs: ${sanitizedData.jobs.length}
+- New Vectors: ${sanitizedData.vectors.totalCount || 0}
+- Chat Activity: ${sanitizedData.chats.totalCount || 0}
+
+This is an automated report - please do not reply to this email.
+        `;
+
+        // Simple validation to ensure email content exists
+        if (!htmlContent) {
+            throw new Error('Failed to generate HTML email content');
+        }
+
+        const reportId = uuid.v4();
 
         // Prepare the email job
         const emailJob = {
             type: 'generic',
             to: MIS_REPORT_RECIPIENT,
-            subject: `MySecondBrain.info - MIS Report ${new Date().toLocaleString('en-IN', {
-                timeZone: 'Asia/Kolkata',
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true
-            })}`,
+            subject: `MySecondBrain.info - MIS Report ${formatDateTime(new Date())}`,
             html: htmlContent,
-            text: `MIS Report for period ${reportData.timeRange.from.toISOString()} to ${reportData.timeRange.to.toISOString()}`,
+            text: textContent,
             metadata: {
                 reportType: 'mis',
-                reportPeriod: `${reportData.timeRange.from.toISOString()} - ${reportData.timeRange.to.toISOString()}`
+                reportId: reportId,
+                reportPeriod: `${formatDateTime(sanitizedData.timeRange.from)} - ${formatDateTime(sanitizedData.timeRange.to)}`
             }
         };
 
@@ -285,19 +333,23 @@ async function sendMISReport(reportData) {
         const result = await emailQueueService.addToQueue(emailJob);
 
         if (result) {
-            logger.info('MIS report email added to queue successfully', {
+            logger.info('MIS report email sent successfully', {
                 recipient: MIS_REPORT_RECIPIENT,
-                reportPeriod: `${reportData.timeRange.from.toISOString()} - ${reportData.timeRange.to.toISOString()}`
+                reportId: reportId
             });
         } else {
-            logger.error('Failed to add MIS report email to queue', {
-                recipient: MIS_REPORT_RECIPIENT
+            logger.error('Failed to send MIS report email', {
+                recipient: MIS_REPORT_RECIPIENT,
+                reportId: reportId
             });
         }
 
         return result;
     } catch (error) {
-        logger.error('Error sending MIS report email', { error });
+        logger.error('Error sending MIS report email', {
+            error: error.message,
+            stack: error.stack
+        });
         return false;
     }
 }

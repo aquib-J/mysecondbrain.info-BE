@@ -98,19 +98,17 @@ class EmailQueueService {
             return false;
         }
 
-        if (!this.initialized) {
-            await this.init();
-            if (!this.initialized) {
-                logger.error('Cannot add to queue - service not initialized');
-                return false;
-            }
-        }
-
         try {
-            // Validate Redis client
-            if (!this.client || !await this.isRedisConnected()) {
-                logger.error('Redis client not available when adding to queue');
-                return false;
+            // Check if Redis is available
+            if (!this.initialized || !await this.isRedisConnected()) {
+                logger.warn('Redis not available for email queue, using direct send fallback', {
+                    to: emailJob.to,
+                    type: emailJob.type,
+                    subject: emailJob.subject || '[No Subject]'
+                });
+
+                // Use direct email sending as fallback
+                return await this.sendEmailDirectly(emailJob);
             }
 
             // Add job metadata
@@ -139,9 +137,68 @@ class EmailQueueService {
 
             return true;
         } catch (error) {
-            logger.error('Error adding email to queue', {
+            logger.error('Error adding email to queue, trying direct send', {
                 error: error.message,
-                emailJob
+                to: emailJob.to,
+                type: emailJob.type
+            });
+
+            // Use direct email sending as fallback
+            return await this.sendEmailDirectly(emailJob);
+        }
+    }
+
+    /**
+     * Send email directly when queue is unavailable
+     * @param {Object} emailJob - Email job to be processed
+     * @returns {Promise<boolean>} - Success or failure
+     * @private
+     */
+    async sendEmailDirectly(emailJob) {
+        try {
+            logger.info('Sending email directly (bypassing queue)', {
+                to: emailJob.to,
+                type: emailJob.type,
+                subject: emailJob.subject || '[No Subject]'
+            });
+
+            let success = false;
+
+            switch (emailJob.type) {
+                case 'welcome':
+                    success = await emailService.sendWelcomeEmail(emailJob.to, emailJob.username);
+                    break;
+
+                case 'generic':
+                default:
+                    success = await emailService.sendEmail(
+                        emailJob.to,
+                        emailJob.subject,
+                        emailJob.html,
+                        emailJob.text
+                    );
+                    break;
+            }
+
+            if (success) {
+                logger.info('Email sent directly successfully', {
+                    to: emailJob.to,
+                    type: emailJob.type
+                });
+            } else {
+                logger.error('Direct email sending failed', {
+                    to: emailJob.to,
+                    type: emailJob.type
+                });
+            }
+
+            return success;
+        } catch (error) {
+            logger.error('Error in direct email sending', {
+                error: error.message,
+                stack: error.stack,
+                to: emailJob.to,
+                type: emailJob.type
             });
             return false;
         }
@@ -292,19 +349,56 @@ class EmailQueueService {
 
             let success = false;
 
-            // Validate job data before proceeding
-            if (!job.to || (job.type !== 'welcome' && (!job.subject || (!job.html && !job.text)))) {
-                throw new Error('Invalid job data - missing required fields');
+            // Enhanced validation of job data
+            if (!job) {
+                throw new Error('Job object is null or undefined');
             }
 
-            // Process based on email type
+            if (!job.to) {
+                throw new Error('Missing recipient email address (to)');
+            }
+
+            // Type-specific validation
+            if (job.type === 'welcome') {
+                if (!job.username) {
+                    logger.warn('Welcome email missing username, using default', {
+                        id: job.id,
+                        to: job.to
+                    });
+                    job.username = 'User'; // Provide a default
+                }
+            } else if (job.type === 'generic') {
+                if (!job.subject) {
+                    throw new Error('Generic email missing subject');
+                }
+
+                if (!job.html && !job.text) {
+                    throw new Error('Generic email missing both HTML and text content');
+                }
+            } else {
+                throw new Error(`Unknown email type: ${job.type}`);
+            }
+
+            // Process the job with appropriate error handling
             switch (job.type) {
                 case 'welcome':
+                    logger.debug('Sending welcome email', {
+                        id: job.id,
+                        to: job.to,
+                        username: job.username
+                    });
                     success = await emailService.sendWelcomeEmail(job.to, job.username);
                     break;
 
                 case 'generic':
                 default:
+                    logger.debug('Sending generic email', {
+                        id: job.id,
+                        to: job.to,
+                        subject: job.subject,
+                        hasHtml: !!job.html,
+                        hasText: !!job.text
+                    });
                     success = await emailService.sendEmail(job.to, job.subject, job.html, job.text);
                     break;
             }
@@ -324,9 +418,11 @@ class EmailQueueService {
 
         } catch (error) {
             logger.error('Error processing email job', {
-                id: job.id,
-                type: job.type,
-                error: error.message
+                id: job?.id || 'unknown',
+                type: job?.type || 'unknown',
+                to: job?.to || 'unknown',
+                error: error.message,
+                stack: error.stack
             });
 
             // Handle retries or move to dead letter queue
