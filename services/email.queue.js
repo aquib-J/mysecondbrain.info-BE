@@ -164,6 +164,15 @@ class EmailQueueService {
 
             let success = false;
 
+            // Add more detailed tracking
+            const startTime = Date.now();
+            const attemptId = `direct-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+
+            logger.debug(`Starting direct email send attempt ${attemptId}`, {
+                to: emailJob.to,
+                type: emailJob.type
+            });
+
             switch (emailJob.type) {
                 case 'welcome':
                     success = await emailService.sendWelcomeEmail(emailJob.to, emailJob.username);
@@ -180,15 +189,21 @@ class EmailQueueService {
                     break;
             }
 
+            const duration = Date.now() - startTime;
+
             if (success) {
-                logger.info('Email sent directly successfully', {
+                logger.info(`Email sent directly successfully (${duration}ms)`, {
                     to: emailJob.to,
-                    type: emailJob.type
+                    type: emailJob.type,
+                    attemptId,
+                    duration
                 });
             } else {
-                logger.error('Direct email sending failed', {
+                logger.error(`Direct email sending failed after ${duration}ms`, {
                     to: emailJob.to,
-                    type: emailJob.type
+                    type: emailJob.type,
+                    attemptId,
+                    duration
                 });
             }
 

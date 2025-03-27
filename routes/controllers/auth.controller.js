@@ -97,37 +97,37 @@ const signup = async (req, res) => {
         // Dispatch welcome email to Queue
         if (SEND_EMAILS === 'true') {
             // Add welcome email to queue
-                emailQueueService.addToQueue({
-                    type: 'welcome',
-                    to: email,
-                    username: username,
-                    metadata: {
-                        userId: newUser.id,
-                        requestId: req.requestId
-                    }
-                }).then(queued => {
-                    if (queued) {
-                        logger.info('Welcome email added to queue', {
-                            requestId: req.requestId,
-                            userId: newUser.id,
-                            email: newUser.email
-                        });
-                    } else {
-                        logger.warn('Failed to add welcome email to queue', {
-                            requestId: req.requestId,
-                            userId: newUser.id,
-                            email: newUser.email
-                        });
-                    }
-                }).catch(emailError => {
-                    logger.error('Error handling welcome email', {
+            emailQueueService.addToQueue({
+                type: 'welcome',
+                to: email,
+                username: username,
+                metadata: {
+                    userId: newUser.id,
+                    requestId: req.requestId
+                }
+            }).then(queued => {
+                if (queued) {
+                    logger.info('Welcome email added to queue', {
                         requestId: req.requestId,
                         userId: newUser.id,
-                        email: newUser.email,
-                        error: emailError.message,
-                        stack: emailError.stack
+                        email: newUser.email
                     });
+                } else {
+                    logger.warn('Failed to add welcome email to queue', {
+                        requestId: req.requestId,
+                        userId: newUser.id,
+                        email: newUser.email
+                    });
+                }
+            }).catch(emailError => {
+                logger.error('Error handling welcome email', {
+                    requestId: req.requestId,
+                    userId: newUser.id,
+                    email: newUser.email,
+                    error: emailError.message,
+                    stack: emailError.stack
                 });
+            });
         }
 
         // Return user object without sensitive information

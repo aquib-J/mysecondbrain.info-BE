@@ -10,7 +10,7 @@ const logger = new Logger();
  */
 class EmailService {
     constructor() {
-        this.transporter = null;
+        this.transportConfig = null;
         this.initialize();
     }
 
@@ -38,8 +38,8 @@ class EmailService {
                 user: EMAIL_USER ? `${EMAIL_USER.substring(0, 3)}...` : 'not set'
             });
 
-            // Create transporter for production with correct settings
-            this.transporter = nodemailer.createTransport({
+            // Store the transport configuration instead of creating the transport
+            this.transportConfig = {
                 host: host,
                 port: port,
                 secure: secure, // true for 465, false for other ports
@@ -47,34 +47,46 @@ class EmailService {
                     user: EMAIL_USER || '',
                     pass: EMAIL_PASSWORD || '',
                 },
-                connectionTimeout: 10000, // 10 seconds
-                greetingTimeout: 5000,
-                socketTimeout: 10000,
+                connectionTimeout: 5000, // 5 seconds - reduced from 10
+                greetingTimeout: 3000, // 3 seconds - reduced from 5
+                socketTimeout: 5000, // 5 seconds - reduced from 10
                 tls: {
                     // Do not fail on invalid certs
                     rejectUnauthorized: false
                 },
-                debug: true, //enable debug output
-                logger: true //log to console
-            });
-
-            // Verify the connection
-            this.transporter.verify((error, success) => {
-                if (error) {
-                    logger.error('SMTP connection verification failed', {
-                        error: error.message,
-                        host,
-                        port
-                    });
-                } else {
-                    logger.info('SMTP connection verified successfully', { success });
-                }
-            });
+                debug: NODE_ENV === 'development', // only enable debug in development
+                logger: NODE_ENV === 'development',  // only log to console in development
+                disableFileAccess: true, // Security: disallow attachments from file paths
+                pool: false, // Disable connection pooling - create fresh connections
+                maxConnections: 1, // Limit to one connection
+                maxMessages: 1, // Limit to one message per connection
+                rateDelta: 1000, // Minimum milliseconds between messages
+                rateLimit: 5, // Maximum number of messages in rateDelta time
+                dnsCache: false // Disable DNS caching to get fresh DNS records
+            };
 
             logger.info('Email service initialized successfully');
         } catch (error) {
             logger.error('Error initializing email service', { error: error.message, stack: error.stack });
         }
+    }
+
+    /**
+     * Create a fresh transporter with the current configuration
+     * @returns {Object} - Nodemailer transporter
+     * @private
+     */
+    _createTransporter() {
+        if (NODE_ENV !== 'production') {
+            return this.testTransporter;
+        }
+
+        if (!this.transportConfig) {
+            logger.error('Transport configuration not initialized');
+            return null;
+        }
+
+        return nodemailer.createTransport(this.transportConfig);
     }
 
     /**
@@ -85,8 +97,8 @@ class EmailService {
             // Create test account on ethereal.email
             const testAccount = await nodemailer.createTestAccount();
 
-            // Create a transporter for testing
-            this.transporter = nodemailer.createTransport({
+            // Create a transporter config for testing
+            this.transportConfig = {
                 host: 'smtp.ethereal.email',
                 port: 587,
                 secure: false,
@@ -94,7 +106,10 @@ class EmailService {
                     user: testAccount.user,
                     pass: testAccount.pass,
                 },
-            });
+            };
+
+            // Store a reference to the test transporter
+            this.testTransporter = nodemailer.createTransport(this.transportConfig);
 
             logger.info('Test email account created', {
                 user: testAccount.user,
@@ -116,15 +131,21 @@ class EmailService {
      */
     async _sendWithRetry(mailOptions, retries = 3, backoff = 1000) {
         try {
-            if (!this.transporter) {
-                await this.initialize();
-                if (!this.transporter) {
-                    throw new Error('Email transporter not available');
-                }
+            // Create a fresh transporter for each send attempt
+            const transporter = this._createTransporter();
+
+            if (!transporter) {
+                throw new Error('Failed to create email transporter');
             }
 
-            // Attempt to send email
-            const info = await this.transporter.sendMail(mailOptions);
+            // Log that we're creating a new transporter for this send
+            logger.debug('Creating fresh SMTP transport for email send', {
+                to: mailOptions.to,
+                subject: mailOptions.subject
+            });
+
+            // Attempt to send email with the fresh transporter
+            const info = await transporter.sendMail(mailOptions);
 
             if (NODE_ENV !== 'production') {
                 logger.info('Preview URL for test email:', {
@@ -137,6 +158,11 @@ class EmailService {
                 subject: mailOptions.subject,
                 messageId: info.messageId
             });
+
+            // Close the transporter if possible
+            if (transporter && typeof transporter.close === 'function') {
+                transporter.close();
+            }
 
             return { success: true, info };
         } catch (error) {
@@ -226,18 +252,18 @@ class EmailService {
      */
     getServiceStatus() {
         const isProduction = NODE_ENV === 'production';
-        const hasTransporter = !!this.transporter;
+        const hasConfig = !!this.transportConfig;
         const hasAuth = !!(EMAIL_USER && EMAIL_PASSWORD);
 
         // Check if we have the minimum required configuration
         const isConfigured = isProduction ?
-            (hasTransporter && hasAuth) :
-            hasTransporter;
+            (hasConfig && hasAuth) :
+            hasConfig;
 
         return {
             isReady: isConfigured,
             environment: NODE_ENV,
-            transporterConfigured: hasTransporter,
+            configAvailable: hasConfig,
             authConfigured: hasAuth,
             host: EMAIL_HOST || 'smtp.hostinger.com',
             port: EMAIL_PORT || 465,
