@@ -10,6 +10,19 @@ const logger = new Logger();
 export const requestLoggerMiddleware = (req, res, next) => {
     const startTime = Date.now();
 
+    // Get the real client IP from various possible headers
+    const clientIp =
+        req.headers['x-real-ip'] ||
+        req.headers['x-client-ip'] ||
+        req.headers['x-forwarded-for']?.split(',')[0] ||
+        req.connection.remoteAddress ||
+        req.ip ||
+        'unknown';
+
+    // Store the real client IP in a consistent location across the application
+    req.clientIp = clientIp;
+    res.locals.clientIp = clientIp;
+
     // Log request details
     logger.info('Incoming request', {
         method: req.method,
@@ -17,7 +30,7 @@ export const requestLoggerMiddleware = (req, res, next) => {
         params: req.params,
         query: req.query,
         body: sanitizeBody(req.body),
-        ip: req.ip,
+        ip: clientIp,
         userAgent: req.get('User-Agent'),
         userId: req.user?.id || 'unauthenticated'
     });

@@ -7,6 +7,7 @@ email="${EMAIL:-aquib.jansher@gmail.com}"
 domain="${DOMAIN:-api.mysecondbrain.info}"
 staging=${STAGING:-0}
 env_file=".env.ssl"
+prod_env_file=".env.production"
 
 echo "=== Starting SSL certificate setup for $domain ==="
 
@@ -27,7 +28,7 @@ fi
 
 # Ensure all containers are stopped to free port 80
 echo "Stopping any existing containers..."
-docker compose --env-file $env_file -f docker-compose.production.yml down 2>/dev/null || true
+docker compose --env-file $env_file --env-file $prod_env_file -f docker-compose.production.yml down 2>/dev/null || true
 
 # Set staging parameter if needed
 staging_arg=""
@@ -59,7 +60,7 @@ fi
 
 # Start services with the new certificate
 echo "Starting services with new certificate..."
-docker compose --env-file $env_file -f docker-compose.production.yml up -d
+docker compose --env-file $env_file --env-file $prod_env_file -f docker-compose.production.yml up -d
 
 echo "=== Let's Encrypt setup complete for $domain ==="
 echo "Your site should now be available at https://$domain" 

@@ -27,6 +27,9 @@ const logger = new Logger();
 
 const app = express();
 
+// Enable trust proxy to properly handle IP addresses behind proxies
+app.set('trust proxy', true);
+
 // Request ID middleware
 app.use((req, res, next) => {
     const requestId = uuid.v4();
@@ -110,6 +113,14 @@ function gracefulShutdown() {
 
     // Stop all cron jobs
     stopAllCronJobs();
+
+    // Clean up the Redis rate limit stores [Maybe required down the line]
+    try {
+        logger.info('Cleaning up Redis rate limit resources');
+        // If you have global references to your stores: globalLimiterStore.shutdown();
+    } catch (error) {
+        logger.error('Error cleaning up Redis resources', { error: error.message });
+    }
 
     // Close HTTP server
     server.close(() => {

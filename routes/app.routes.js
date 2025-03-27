@@ -31,7 +31,7 @@ appRoute.post('/api/v1/auth/login', loginValidation, login);
 // Private route to fetch user info by validating the token
 appRoute.get('/api/v1/auth/me', async (req, res) => {
     try {
-        logger.log('warn', 'Verifying access Token validity to provide user credentials', { requestId: req.requestId });
+        logger.warn('Verifying access Token validity to provide user credentials', { requestId: req.requestId });
         if (req.cookies && req.cookies.accessToken) {
             let token = req.cookies.accessToken;
             let decoded = jwt.verify(token, JWT_SECRET);

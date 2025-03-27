@@ -47,7 +47,7 @@ jobs:
 
             # Rebuild and start services with --build flag
             echo "Building and starting services..."
-            docker compose --env-file .env.ssl -f docker-compose.production.yml up -d --build
+            docker compose --env-file .env.ssl --env-file .env.production -f docker-compose.production.yml up -d --build
             
             # Wait for services to start
             echo "Waiting for services to start..."
@@ -60,7 +60,7 @@ jobs:
             else
               echo "⚠️ HTTPS check returned a non-2xx response code."
               echo "You may want to check the Docker logs:"
-              echo "docker compose --env-file .env.ssl -f docker-compose.production.yml logs nginx"
+              echo "docker compose --env-file .env.ssl --env-file .env.production -f docker-compose.production.yml logs nginx"
             fi
             
             # Clean up only older unused Docker resources (>24h)

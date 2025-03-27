@@ -19,15 +19,26 @@ class RedisStore {
         this.connectionAttempts = 0;
         this.maxRetries = 3;
         this.retryDelay = 1000; // 1 second
+        this.healthCheckInterval = null;
+        this.reconnecting = false;
 
         // Initialize Redis client
         this.initializeClient();
+
+        // Start health check monitoring
+        this.startHealthCheck();
     }
 
     /**
      * Initialize Redis client
      */
     async initializeClient() {
+        if (this.reconnecting) {
+            return;
+        }
+
+        this.reconnecting = true;
+
         try {
             // Get Redis client using the connection manager
             this.client = await redisConnect.getClient();
@@ -38,8 +49,13 @@ class RedisStore {
 
             logger.info('Redis client successfully obtained for rate limiting');
             this.connectionAttempts = 0;
+            this.reconnecting = false;
+
+            // Test connection with a PING
+            await this.testConnection();
         } catch (err) {
             this.connectionAttempts++;
+            this.reconnecting = false;
 
             if (this.connectionAttempts <= this.maxRetries) {
                 logger.warn(`Redis rate limiter initialization attempt ${this.connectionAttempts} failed, retrying in ${this.retryDelay}ms`, {
@@ -47,13 +63,59 @@ class RedisStore {
                 });
 
                 // Retry after delay
-                setTimeout(() => this.initializeClient(), this.retryDelay);
+                setTimeout(() => this.initializeClient(), this.retryDelay * this.connectionAttempts);
             } else {
                 logger.error('Failed to initialize Redis client for rate limiting after retries', {
                     attempts: this.connectionAttempts,
                     error: err.message
                 });
             }
+        }
+    }
+
+    /**
+     * Test connection to Redis with a PING command
+     */
+    async testConnection() {
+        try {
+            const result = await this.client.ping();
+            if (result !== 'PONG') {
+                throw new Error('Redis ping did not return PONG');
+            }
+            return true;
+        } catch (err) {
+            logger.error('Redis connection test failed', {
+                error: err.message
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Start a health check interval to monitor Redis connection
+     */
+    startHealthCheck() {
+        // Clear any existing interval
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+        }
+
+        // Set up health check every 30 seconds
+        this.healthCheckInterval = setInterval(async () => {
+            if (!this.isConnected()) {
+                logger.warn('Health check detected Redis disconnection, attempting to reconnect');
+                await this.initializeClient();
+            }
+        }, 30000); // 30 seconds
+    }
+
+    /**
+     * Clean up resources when the store is no longer needed
+     */
+    shutdown() {
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+            this.healthCheckInterval = null;
         }
     }
 
@@ -93,12 +155,29 @@ class RedisStore {
             multi.ttl(redisKey);
 
             // Execute both commands
-            const [count, ttl] = await multi.exec();
+            const results = await multi.exec();
+
+            if (!results || results.length < 2) {
+                throw new Error('Redis multi execution failed');
+            }
+
+            const [incrResult, ttlResult] = results;
+
+            if (!incrResult || !ttlResult) {
+                throw new Error('Invalid Redis response');
+            }
+
+            const count = parseInt(incrResult[1]);
+            const ttl = parseInt(ttlResult[1]);
+
+            // Ensure count is a valid number
+            if (isNaN(count) || count < 0) {
+                throw new Error('Invalid count from Redis');
+            }
 
             // If this is a new key (count === 1) or TTL is -1 (no expiry set)
-            if (count[1] === 1 || ttl[1] === -1) {
+            if (count === 1 || ttl === -1) {
                 await this.client.expire(redisKey, Math.ceil(this.windowMs / 1000));
-
                 return {
                     totalHits: 1,
                     resetTime: new Date(now + this.windowMs)
@@ -106,10 +185,10 @@ class RedisStore {
             }
 
             // Calculate reset time based on TTL
-            const resetTime = new Date(now + (ttl[1] * 1000));
+            const resetTime = new Date(now + (ttl * 1000));
 
             return {
-                totalHits: count[1],
+                totalHits: count,
                 resetTime: resetTime
             };
         } catch (err) {
@@ -258,7 +337,16 @@ const createLimiter = (options) => {
  * @returns {string} - Key for rate limiting
  */
 const userKeyGenerator = (req) => {
-    return req.user?.id || req.ip; // Use userId if available, otherwise IP
+    // If authenticated, use user ID
+    if (req.user?.id) {
+        return `user:${req.user.id}`;
+    }
+
+    // Use the consistent clientIp property set by the requestLoggerMiddleware
+    // This already handles all the different headers and fallbacks
+    const ip = req.clientIp || req.ip || 'unknown';
+
+    return `ip:${ip}`;
 };
 
 /**
@@ -308,7 +396,7 @@ export const queryRateLimiter = createLimiter({
 export const globalRateLimiter = createLimiter({
     windowMs: 60 * 1000, // 1 minute
     max: 100, // 10 requests per minute
-    keyGenerator: (req) => req.ip, // Always use IP for global rate limiting
+    keyGenerator: (req) => req?.clientIp || req.ip, // Always use IP for global rate limiting
     limitType: 'global',
     handler: (req, res) => {
         logger.warn('Global rate limit exceeded', { ip: req.ip });

@@ -25,9 +25,9 @@ services:
   # Redis for caching - SECURED
   redis:
     image: redis:latest
-    command: redis-server --bind 127.0.0.1 --appendonly yes -requirepass ${REDIS_PASSWORD}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     ports:
-      - "127.0.0.1:6379:6379"  # Only expose Redis locally
+      - "6379:6379"
     volumes:
       - redis_data:/data
     networks:

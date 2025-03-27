@@ -36,14 +36,32 @@ const signup = async (req, res) => {
         // Hash the password
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
-        // Create user with metadata
+        // Get the real client IP from various possible headers
+        const clientIp =
+            req.headers['x-real-ip'] ||
+            req.headers['x-client-ip'] ||
+            req.headers['x-forwarded-for']?.split(',')[0] ||
+            req.connection.remoteAddress ||
+            req.ip ||
+            'unknown';
+
+        // Create user with enhanced metadata
         const newUser = await User.create({
             email,
             username,
             password_hash: hashedPassword,
+            signup_ip_address: clientIp,
             metadata: {
-                signup_ip: req.ip,
-                signup_user_agent: req.headers['user-agent']
+                signup_ip: clientIp,
+                signup_user_agent: req.headers['user-agent'],
+                signup_timestamp: new Date().toISOString(),
+                signup_headers: {
+                    forwarded: req.headers['x-forwarded-for'],
+                    realIp: req.headers['x-real-ip'],
+                    clientIp: req.headers['x-client-ip'],
+                    userAgent: req.headers['user-agent'],
+                    referer: req.headers['referer']
+                }
             }
         }, { transaction });
 
