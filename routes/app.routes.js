@@ -58,6 +58,9 @@ appRoute.get('/api/v1/auth/me', async (req, res) => {
 // For Authenticated Routes
 appRoute.use(authenticateMiddleware);
 
+// Admin routes [Protected]
+appRoute.use('/api/v1/admin', adminRoutes);
+
 // Document routes with upload rate limiting
 appRoute.post('/api/v1/documents/upload', uploadRateLimiter, uploadDocumentValidation, uploadDocument);
 appRoute.post('/api/v1/documents/update/:documentId', updateDocumentValidation, updateDocument);
@@ -67,7 +70,7 @@ appRoute.get('/api/v1/documents/status/:documentId', getDocumentStatusValidation
 appRoute.delete('/api/v1/documents/delete/:documentId', deleteDocumentValidation, deleteDocument);
 
 appRoute.use('/api/v1/chats', chatRoutes);
-appRoute.use('/api/v1/admin', adminRoutes);
+
 
 
 // Logout route with validation
@@ -78,7 +81,7 @@ appRoute.get('/health', async (req, res) => {
         status: 'OK',
         redis: (await redisClient.ping()) === 'PONG' ? 'connected' : 'disconnected',
         db: (await sequelize.authenticate()) ? 'connected' : 'disconnected',
-        weaviate: weaviateClient.healthCheck() ? 'available' : 'unavailable'
+        weaviate: (await weaviateClient.healthCheck()) ? 'available' : 'unavailable'
     });
 });
 

@@ -9,19 +9,60 @@ import redisConnect from '../databases/redis/redisConnect.js';
 const logger = new Logger();
 
 /**
- * Redis store implementation for express-rate-limit
+ * Redis store implementation for express-rate-limit with enhanced connection handling
  */
 class RedisStore {
     constructor(windowMs) {
-        this.client = redisConnect.getClient(); // Get the actual Redis client
-        this.prefix = 'rl:';
         this.windowMs = windowMs || 60 * 1000; // Default to 1 minute if not provided
+        this.prefix = 'rl:';
+        this.client = null;
+        this.connectionAttempts = 0;
+        this.maxRetries = 3;
+        this.retryDelay = 1000; // 1 second
 
-        // Ensure Redis client is ready
-        if (!this.client || !this.client.isReady) {
-            logger.error('Redis client not ready');
-            throw new Error('Redis client not ready');
+        // Initialize Redis client
+        this.initializeClient();
+    }
+
+    /**
+     * Initialize Redis client
+     */
+    async initializeClient() {
+        try {
+            // Get Redis client using the connection manager
+            this.client = await redisConnect.getClient();
+
+            if (!this.client) {
+                throw new Error('Redis client not available from connection manager');
+            }
+
+            logger.info('Redis client successfully obtained for rate limiting');
+            this.connectionAttempts = 0;
+        } catch (err) {
+            this.connectionAttempts++;
+
+            if (this.connectionAttempts <= this.maxRetries) {
+                logger.warn(`Redis rate limiter initialization attempt ${this.connectionAttempts} failed, retrying in ${this.retryDelay}ms`, {
+                    error: err.message
+                });
+
+                // Retry after delay
+                setTimeout(() => this.initializeClient(), this.retryDelay);
+            } else {
+                logger.error('Failed to initialize Redis client for rate limiting after retries', {
+                    attempts: this.connectionAttempts,
+                    error: err.message
+                });
+            }
         }
+    }
+
+    /**
+     * Check if client is connected and ready
+     * @returns {boolean} - Whether the client is connected
+     */
+    isConnected() {
+        return redisConnect.isConnected();
     }
 
     /**
@@ -32,6 +73,14 @@ class RedisStore {
     async increment(key) {
         const redisKey = this.prefix + key;
         const now = Date.now();
+
+        // If Redis is not connected, return default values
+        if (!this.isConnected()) {
+            return {
+                totalHits: 1,
+                resetTime: new Date(now + this.windowMs)
+            };
+        }
 
         try {
             // Use multi to ensure atomic operations
@@ -84,6 +133,9 @@ class RedisStore {
      * @returns {Promise<void>}
      */
     async decrement(key) {
+        // If Redis is not connected, do nothing
+        if (!this.isConnected()) return;
+
         const redisKey = this.prefix + key;
         try {
             const multi = this.client.multi();
@@ -113,6 +165,9 @@ class RedisStore {
      * @returns {Promise<void>}
      */
     async resetKey(key) {
+        // If Redis is not connected, do nothing
+        if (!this.isConnected()) return;
+
         const redisKey = this.prefix + key;
         try {
             await this.client.del(redisKey);
@@ -130,6 +185,9 @@ class RedisStore {
      * @returns {Promise<void>}
      */
     async resetAll() {
+        // If Redis is not connected, do nothing
+        if (!this.isConnected()) return;
+
         try {
             // Get all keys with our prefix
             const keys = await this.client.keys(this.prefix + '*');

@@ -1,6 +1,6 @@
 import { createClient } from 'redis';
 import Logger from '../../utils/Logger.js';
-import { REDIS_URL, NODE_ENV } from '../../config/env.js';
+import { REDIS_URL, REDIS_PASSWORD, NODE_ENV } from '../../config/env.js';
 
 const logger = new Logger();
 
@@ -13,12 +13,18 @@ class RedisConnect {
         this.isConnecting = false;
         this.connectionAttempts = 0;
         this.maxConnectionAttempts = 5;
-        this.url = REDIS_URL || 'redis://localhost:6379';
+        this.url = REDIS_URL;
         this.isAuthenticated = this.detectAuthFromUrl(this.url);
+
+        // Validate Redis URL and authentication
+        if (!this.isAuthenticated && REDIS_PASSWORD) {
+            logger.warn('Redis URL does not contain password, but REDIS_PASSWORD is set. The URL may be incorrect.');
+        }
 
         logger.info('Redis connection manager initialized', {
             url: this.maskRedisUrl(this.url),
-            authenticated: this.isAuthenticated
+            authenticated: this.isAuthenticated,
+            environment: NODE_ENV
         });
     }
 
@@ -32,6 +38,7 @@ class RedisConnect {
             const parsedUrl = new URL(url);
             return !!parsedUrl.password && parsedUrl.password.length > 0;
         } catch (error) {
+            logger.error('Failed to parse Redis URL', { error: error.message });
             return false;
         }
     }
@@ -49,6 +56,7 @@ class RedisConnect {
             }
             return parsedUrl.toString();
         } catch (error) {
+            logger.error('Failed to mask Redis URL', { error: error.message });
             return 'Invalid URL format';
         }
     }
@@ -64,7 +72,7 @@ class RedisConnect {
 
         if (this.isConnecting) {
             // Wait for the ongoing connection
-            logger.debug('Connection already in progress, waiting...');
+            logger.debug('Redis connection already in progress, waiting...');
             await new Promise(resolve => setTimeout(resolve, 100));
             return this.getClient();
         }
@@ -75,10 +83,22 @@ class RedisConnect {
         try {
             logger.info('Connecting to Redis', {
                 attempt: this.connectionAttempts,
-                maxAttempts: this.maxConnectionAttempts
+                maxAttempts: this.maxConnectionAttempts,
+                url: this.maskRedisUrl(this.url)
             });
 
-            this.client = createClient({ url: this.url });
+            // Create client with appropriate options
+            this.client = createClient({
+                url: this.url,
+                socket: {
+                    reconnectStrategy: (retries) => {
+                        const delay = Math.min(retries * 50, 2000);
+                        logger.debug(`Redis reconnect strategy: retry ${retries} with delay ${delay}ms`);
+                        return delay;
+                    },
+                    connectTimeout: 5000 // 5 seconds timeout
+                }
+            });
 
             // Set up event handlers
             this.client.on('error', (err) => {
@@ -98,6 +118,14 @@ class RedisConnect {
             });
 
             await this.client.connect();
+
+            // Verify connection with a ping
+            const pingResult = await this.client.ping();
+            if (pingResult !== 'PONG') {
+                throw new Error('Redis ping failed after connection');
+            }
+
+            logger.info('Redis connection established successfully');
             this.isConnecting = false;
             this.connectionAttempts = 0;
             return this.client;
@@ -106,7 +134,8 @@ class RedisConnect {
             this.isConnecting = false;
             logger.error('Failed to connect to Redis', {
                 error: error.message,
-                attempt: this.connectionAttempts
+                attempt: this.connectionAttempts,
+                url: this.maskRedisUrl(this.url)
             });
 
             // Retry connection if not exceeded max attempts
@@ -141,7 +170,7 @@ class RedisConnect {
      * @returns {boolean} - True if connected
      */
     isConnected() {
-        return !!(this.client && this.client.isOpen);
+        return this.client && this.client.isOpen;
     }
 
     /**

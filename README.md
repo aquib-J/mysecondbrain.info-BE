@@ -352,6 +352,169 @@ If you're setting up or managing the system, start with:
 | [Environment Variables](./docs/env-variables.md) | Complete list of all environment variables used by the system, their defaults, and which ones are required. |
 | [Log Archiving](./docs/log-archiving.md) | Detailed guide on the log archiving system, including AWS S3 configuration, scheduling, and monitoring. |
 
+
+
+# MySecondBrain.info API
+
+This is the backend API for MySecondBrain.info, a comprehensive knowledge management and note-taking application.
+
+## Features
+
+- User authentication with JWT
+- Redis-based email queue system
+- Amazon RDS MySQL database integration
+- Weaviate vector database for semantic search
+- Automated SSL certificate management with Let's Encrypt
+- GitHub Actions-based CI/CD pipeline
+
+## Email Queue System
+
+The application includes a robust, Redis-based email queue system designed to handle email sending in a non-blocking, fault-tolerant manner.
+
+### Key Features
+
+- **Non-blocking operation**: Email sending happens asynchronously via a queue
+- **Automatic retries**: Failed emails are automatically retried with exponential backoff
+- **Dead letter queue**: Persistently failed emails are stored for inspection and manual retry
+- **Admin API endpoints**: Monitor and manage the email queue via admin endpoints
+- **Email service health monitoring**: Status checks and diagnostics available through scripts
+
+### Queue Architecture
+
+The email queue system consists of three primary queues:
+
+1. **Main Queue** (`email:queue`): New email jobs are added here for processing
+2. **Processing Queue** (`email:processing:*`): Temporary storage for emails being processed
+3. **Dead Letter Queue** (`email:deadletter`): Storage for emails that failed after multiple retry attempts
+
+### Admin API Endpoints
+
+The following endpoints are available for queue management (admin only):
+
+- `GET /api/v1/admin/email/queue/stats` - Get queue statistics
+- `GET /api/v1/admin/email/queue/dead` - List failed emails
+- `POST /api/v1/admin/email/queue/retry/:jobId` - Retry a specific failed email
+- `DELETE /api/v1/admin/email/queue/dead` - Clear the dead letter queue
+
+### Testing and Monitoring
+
+Testing scripts are available in the `scripts` directory:
+
+- `scripts/test-email-service.js` - Send a direct test email using the email service
+- `scripts/test-email-queue.js` - Test the email queue system with sample emails
+- `scripts/email-queue-status.js` - Comprehensive tool for queue monitoring and management
+
+#### Example Usage
+
+```bash
+# Test direct email sending
+node scripts/test-email-service.js production
+
+# Test the email queue system with sample emails
+node scripts/test-email-queue.js production
+
+# Check email queue status
+node scripts/email-queue-status.js production status
+
+# Get detailed debugging info about the email queue
+node scripts/email-queue-status.js production debug
+
+# Retry all failed emails
+node scripts/email-queue-status.js production retry-all
+
+# Clear the dead letter queue
+node scripts/email-queue-status.js production clear
+```
+
+## Environment Configuration
+
+The application supports multiple environments through `.env.*` files:
+
+- `.env.development` - Development environment settings
+- `.env.test` - Test environment settings
+- `.env.production` - Production environment settings
+
+### Required Variables
+
+Key environment variables for proper operation include:
+
+```
+# Core settings
+PORT=3000
+NODE_ENV=production || development
+SERVICE_NAME=mysecondbrain-api
+LOG_LEVEL=info
+ENABLE_CRON_JOBS=true
+
+# Database settings (Amazon RDS)
+DB_HOST=your-rds-instance.region.rds.amazonaws.com
+DB_PORT=3306
+DB_NAME=mysecondbrain
+DB_USER=dbuser
+DB_PASSWORD=dbpassword
+
+# Redis settings
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# Email settings
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+EMAIL_FROM=no-reply@mysecondbrain.info
+SEND_EMAILS=true
+
+# Authentication
+JWT_SECRET=your-jwt-secret
+JWT_EXPIRY=3600
+ADMIN_PASS=admin-password-hash
+
+# Domain configuration
+DOMAIN=api.mysecondbrain.info
+```
+
+## Deployment
+
+The application is deployed using Docker Compose and a GitHub Actions workflow. The deployment process includes:
+
+1. Amazon RDS connection testing
+2. Redis connection verification
+3. SSL certificate management with Let's Encrypt
+4. Docker container deployment and orchestration
+
+### Docker Services
+
+- Node.js Express application
+- Redis for caching and queue management
+- Weaviate vector database
+- Nginx for reverse proxy and SSL termination
+
+## Development
+
+### Prerequisites
+
+- Node.js 18+ (lts/hydrogen)
+- Docker and Docker Compose
+- MySQL (local development) or Amazon RDS connection
+
+### Setup
+
+1. Clone the repository
+2. Create appropriate `.env.*` files
+3. Install dependencies: `npm install`
+4. Start development server: `npm run dev`
+
+### Testing
+
+- Run unit tests: `npm test`
+- Test email service: `node scripts/test-email-service.js development`
+- Test email queue: `node scripts/test-email-queue.js development`
+
+
+
+
 ## Contributing to Documentation
 
 When adding new features to the system, please update the main README.md file and add detailed documentation here as needed.

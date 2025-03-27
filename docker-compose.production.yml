@@ -22,18 +22,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for caching
+  # Redis for caching - SECURED
   redis:
     image: redis:latest
+    command: redis-server --bind 127.0.0.1 --appendonly yes -requirepass ${REDIS_PASSWORD}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"  # Only expose Redis locally
     volumes:
       - redis_data:/data
     networks:
       - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,7 +52,7 @@ services:
     env_file:
       - .env.production
     environment:
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       WEAVIATE_HOST: weaviate:8080
       WEAVIATE_SCHEME: http
     networks:

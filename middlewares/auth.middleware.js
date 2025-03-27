@@ -52,14 +52,6 @@ const authorize = async (req, res, next) => {
                 return Response.fail(res, 'Unauthorized - Invalid user', StatusCodes.UNAUTHORIZED);
             }
 
-            if (user.username === 'admin' && user.password_hash !== ADMIN_PASS) {
-                logger.warn('Admin authentication failed: Invalid admin credentials', {
-                    requestId: req.requestId,
-                    userId: user.id
-                });
-                return Response.fail(res, 'Unauthorized - Invalid admin credentials', StatusCodes.UNAUTHORIZED);
-            }
-
             req.user = user;
 
             // For debugging token expiration issues
@@ -103,4 +95,49 @@ const authorize = async (req, res, next) => {
     }
 }
 
+/**
+ * Middleware to ensure user is authenticated and has the same password-hash as the ADMIN_PASS
+ * Must be used after the authorize middleware
+ */
+const requireAdmin = async (req, res, next) => {
+    try {
+        // First ensure authentication
+            if (!req.user) {
+                logger.warn('Admin check failed: No user in request', {
+                    requestId: req.requestId,
+                    path: req.path
+                });
+                return Response.fail(res, 'Access denied - Authentication required', StatusCodes.UNAUTHORIZED);
+            }
+
+            if (req.user.password_hash !== ADMIN_PASS && req.user.username !== 'admin') {
+                logger.warn('Admin check failed: User is not an admin', {
+                    requestId: req.requestId,
+                    userId: req.user.id,
+                    username: req.user.username,
+                    path: req.path
+                });
+                return Response.fail(res, 'Access denied - Admin privileges required', StatusCodes.FORBIDDEN);
+            }
+
+            logger.info('Admin access granted', {
+                requestId: req.requestId,
+                userId: req.user.id,
+                username: req.user.username,
+                path: req.path
+            });
+
+            next();
+    } catch (error) {
+        logger.error('Error in admin authorization middleware', {
+            requestId: req.requestId,
+            error: error.message,
+            stack: error.stack
+        });
+        return Response.fail(res, 'Server error during authorization', StatusCodes.INTERNAL_SERVER_ERROR);
+    }
+};
+
+// Export both middlewares
+export { requireAdmin };
 export default authorize;

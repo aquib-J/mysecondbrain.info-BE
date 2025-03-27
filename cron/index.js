@@ -4,6 +4,7 @@
  */
 import { jobProcessorCron, cleanupCron } from './job.processor.cron.js';
 import { logArchiveCron, tempFileCleanupCron } from './maintenance.cron.js';
+import { misReportCron } from './mis.report.cron.js';
 import Logger from '../utils/Logger.js';
 
 const logger = new Logger();
@@ -16,7 +17,10 @@ const cronJobs = {
 
     // Maintenance crons
     logArchival: logArchiveCron,
-    tempFileCleanup: tempFileCleanupCron
+    tempFileCleanup: tempFileCleanupCron,
+
+    // Reporting crons
+    misReport: misReportCron
 };
 
 /**

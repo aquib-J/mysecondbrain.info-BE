@@ -8,15 +8,17 @@ env_file=".env.ssl"
 
 echo "=== Renewing Let's Encrypt certificates for $domain ==="
 
-# Show existing certificates
-if [ -d "./data/certbot/conf/live" ]; then
-  echo "Current certificates:"
-  ls -la "./data/certbot/conf/live/$domain" || true
-  echo "Certificate expiry information:"
-  openssl x509 -noout -dates -in "./data/certbot/conf/live/$domain/cert.pem" 2>/dev/null || echo "No certificate found."
+# Check if certificates exist
+if [ ! -d "./data/certbot/conf/live/$domain" ]; then
+  echo "No certificates found for $domain. Please run init-letsencrypt.sh first."
+  exit 1
 fi
 
-# Stop containers to free port 80
+# Show existing certificate info
+echo "Current certificate information:"
+openssl x509 -noout -dates -in "./data/certbot/conf/live/$domain/cert.pem" 2>/dev/null || echo "Error reading certificate"
+
+# Stop all containers to free port 80
 echo "Stopping containers for certificate renewal..."
 docker compose --env-file $env_file -f docker-compose.production.yml down
 
@@ -26,7 +28,17 @@ docker run --rm \
   -v "$(pwd)/data/certbot/conf:/etc/letsencrypt" \
   -v "$(pwd)/data/certbot/www:/var/www/certbot" \
   -p 80:80 \
-  certbot/certbot:latest renew --standalone --force-renewal
+  --name certbot-renewal \
+  certbot/certbot:latest renew --standalone
+
+# Verify renewal
+if openssl x509 -checkend 2592000 -noout -in "./data/certbot/conf/live/$domain/cert.pem"; then
+  echo "Certificate renewed successfully and is valid for at least 30 days."
+  echo "New certificate details:"
+  openssl x509 -noout -startdate -enddate -in "./data/certbot/conf/live/$domain/cert.pem"
+else
+  echo "WARNING: Certificate renewal may have failed. Please check the output above."
+fi
 
 # Restart all services
 echo "Restarting services with renewed certificates..."

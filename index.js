@@ -20,6 +20,8 @@ import * as uuid from 'uuid';
 // Import centralized cron job manager
 import { startAllCronJobs, stopAllCronJobs } from './cron/index.js';
 import { globalRateLimiter } from './middlewares/rate-limit.middleware.js';
+// Import email queue service
+import emailQueueService from './services/email.queue.js';
 
 const logger = new Logger();
 
@@ -90,6 +92,10 @@ await initializeDatabase();
 
 // Start all cron jobs
 startAllCronJobs();
+
+// Initialize email queue system
+logger.info('Initializing email queue service');
+await emailQueueService.init();
 
 // Start HTTP server and store server instance
 const server = app.listen(PORT, () => {

@@ -6,7 +6,17 @@ import { UtilityMethods as util} from '../../utils/utilityMethods.js';
 const logger = new Logger();
 
 // Upload Document
- const uploadDocument = async (req, res) => {
+const uploadDocument = async (req, res) => {
+    //TODO: remove this after JSON processing & query logic is tested well
+    if (req.body?.filetype === 'application/json') {
+        logger.warn(`User ${req.user?.username} userId: ${req.user?.id} tried to upload a JSON file`, {
+            requestId: req.requestId,
+            userId: req.user.id,
+            filetype: req.body.filetype
+        }); 
+        return Response.fail(res, "JSON files are not supported yet, we'll update you soon", StatusCodes.BAD_REQUEST);
+    };
+
      try {
          const userId = req.user.id;
          let { filename, filetype } = req.body;

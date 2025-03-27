@@ -6,7 +6,7 @@ import Logger from '../../utils/Logger.js';
 import { UtilityMethods as util } from '../../utils/utilityMethods.js';
 import { NODE_ENV, SEND_EMAILS } from '../../config/env.js';
 import sequelize from '../../databases/mysql8/sequelizeConnect.js'; // Import sequelize for transactions
-import emailService from '../../services/email.service.js';
+import emailQueueService from '../../services/email.queue.js';
 
 const logger = new Logger();
 const SALT_ROUNDS = 10; // Number of rounds for bcrypt hashing
@@ -76,23 +76,38 @@ const signup = async (req, res) => {
             email: newUser.email
         });
 
-        // Send welcome email
+        // Queue welcome email 
         if (SEND_EMAILS === 'true') {
-            try {
-                await emailService.sendWelcomeEmail(email, username);
-                logger.info('Welcome email sent to new user', {
+            // Add welcome email to queue
+            emailQueueService.addToQueue({
+                type: 'welcome',
+                to: email,
+                username: username,
+                metadata: {
+                    userId: newUser.id,
+                    requestId: req.requestId
+                }
+            }).then(queued => {
+                if (queued) {
+                    logger.info('Welcome email added to queue', {
+                        requestId: req.requestId,
+                        userId: newUser.id,
+                        email: newUser.email
+                    });
+                } else {
+                    logger.warn('Failed to add welcome email to queue', {
+                        requestId: req.requestId,
+                        userId: newUser.id,
+                        email: newUser.email
+                    });
+                }
+            }).catch(error => {
+                logger.error('Error queueing welcome email', {
                     requestId: req.requestId,
                     userId: newUser.id,
-                    email: newUser.email
+                    error: error.message
                 });
-            } catch (emailError) {
-                // Log error but don't fail the signup process
-                logger.error('Failed to send welcome email', {
-                    requestId: req.requestId,
-                    userId: newUser.id,
-                    error: emailError.message
-                });
-            }
+            });
         }
 
         // Return user object without sensitive information
@@ -137,7 +152,7 @@ const login = async (req, res) => {
                 replacements: { email },
                 type: sequelize.QueryTypes.SELECT
             });
-        
+
         if (!user) {
             logger.warn('Login attempt with non-existent email', {
                 requestId: req.requestId,

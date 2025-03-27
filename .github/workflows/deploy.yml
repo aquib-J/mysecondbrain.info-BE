@@ -29,55 +29,40 @@ jobs:
             # Make scripts executable
             chmod +x ./nginx/init-letsencrypt.sh ./nginx/renew-certs.sh ./nginx/setup-renewal-cron.sh
             
-            # Cleanup any stray certbot containers
-            echo "Cleaning up stray containers..."
-            docker ps | grep certbot | awk '{print $1}' | xargs -r docker rm -f
-            docker ps -a | grep -E "certbot-run-|certbot_run" | awk '{print $1}' | xargs -r docker rm -f
-            
-            # Validate DNS resolution
-            echo "Checking DNS resolution for api.mysecondbrain.info..."
-            if ! host api.mysecondbrain.info; then
-              echo "WARNING: Domain api.mysecondbrain.info does not resolve correctly!"
-              echo "Please ensure DNS is properly configured to point to this server's IP."
-              IP_ADDRESS=$(curl -s https://ipinfo.io/ip)
-              echo "This server's public IP is: $IP_ADDRESS"
-              echo "DNS should point to this IP."
-            fi
-            
-            # Create/update SSL config if needed
+            # Create SSL config if needed
             if [ ! -f ".env.ssl" ]; then
               echo "Creating SSL configuration..."
               echo "DOMAIN=api.mysecondbrain.info" > .env.ssl
               echo "EMAIL=aquib.jansher@gmail.com" >> .env.ssl
               echo "STAGING=0" >> .env.ssl
-              
-              # Create required directories with proper permissions
-              mkdir -p ./nginx/logs 
-              mkdir -p ./data/certbot/conf
-              
-              # Stop existing containers
-              docker compose -f docker-compose.production.yml down
-              
-              # Run initial SSL setup with direct script
-              ./nginx/init-letsencrypt.sh
-              ./nginx/setup-renewal-cron.sh
-            else
-              # Check certificate validity
-              if [ ! -f "./data/certbot/conf/live/api.mysecondbrain.info/cert.pem" ] || 
-                 ! openssl x509 -checkend 2592000 -noout -in "./data/certbot/conf/live/api.mysecondbrain.info/cert.pem" 2>/dev/null; then
-                echo "Certificates missing or expiring soon. Running renewal..."
-                ./nginx/renew-certs.sh
-              else
-                echo "Certificates are valid for at least 30 more days."
-                
-                # Restart containers if they need to be updated
-                docker compose --env-file .env.ssl -f docker-compose.production.yml up -d
-              fi
             fi
+            
+            # Properly stop all services first
+            echo "Stopping existing services..."
+            docker compose --env-file .env.ssl -f docker-compose.production.yml down
+            
+            # Clean up any stale containers, networks, and volumes
+            echo "Cleaning up unused resources..."
+            docker system prune -f
+
+            # Rebuild and start services with --build flag
+            echo "Building and starting services..."
+            docker compose --env-file .env.ssl -f docker-compose.production.yml up -d --build
+            
+            # Wait for services to start
+            echo "Waiting for services to start..."
+            sleep 10
             
             # Verify the site is working
             echo "Verifying HTTPS access..."
-            curl -k https://api.mysecondbrain.info/ || echo "HTTPS access not yet available - this is normal for first-time setup."
+            if curl -k -s -o /dev/null -w "%{http_code}" https://api.mysecondbrain.info/ | grep -q "2[0-9][0-9]"; then
+              echo "✅ HTTPS is working properly!"
+            else
+              echo "⚠️ HTTPS check returned a non-2xx response code."
+              echo "You may want to check the Docker logs:"
+              echo "docker compose --env-file .env.ssl -f docker-compose.production.yml logs nginx"
+            fi
             
-            # Clean up
+            # Clean up only older unused Docker resources (>24h)
+            echo "Cleaning up old unused Docker resources..."
             docker system prune -a --filter "until=24h" -f 

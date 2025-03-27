@@ -35,7 +35,10 @@ export const {
     WEAVIATE_SCHEME = 'http',
     WEAVIATE_HOST = 'localhost:8080',
     WEAVIATE_API_KEY,
-    REDIS_URL = 'redis://localhost:6379',
+    REDIS_HOST = 'localhost',
+    REDIS_PORT = 6379,
+    REDIS_PASSWORD,
+    REDIS_URL = `redis://${REDIS_PASSWORD ? `:${REDIS_PASSWORD}@` : ''}${REDIS_HOST}:${REDIS_PORT}`,
     USE_REDIS = NODE_ENV === 'production',
     EMAIL_HOST,
     EMAIL_PORT,
@@ -45,6 +48,9 @@ export const {
     SEND_EMAILS,
     ADMIN_PASS
 } = process.env;
+
+// Log Redis configuration (with password masked)
+console.log(`Redis configuration: ${REDIS_HOST}:${REDIS_PORT}, Auth: ${REDIS_PASSWORD ? 'Yes' : 'No'}`);
 
 // Ensure JWT expiration values are valid
 console.log(`Access token expiry: ${JWT_EXPIRES_IN}, Refresh token expiry: ${JWT_REFRESH_EXPIRES_IN}`);
@@ -56,6 +62,11 @@ if (!OPENAI_EMBEDDING_MODEL) throw new Error('OPENAI_EMBEDDING_MODEL environment
 if (!OPENAI_CHAT_MODEL) throw new Error('OPENAI_CHAT_MODEL environment variable is required');
 if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !AWS_REGION || !AWS_S3_BUCKET_NAME) {
     throw new Error('AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_S3_BUCKET_NAME) are required');
+}
+
+// In production, Redis password is required
+if (NODE_ENV === 'production' && USE_REDIS === 'true' && !REDIS_PASSWORD) {
+    throw new Error('REDIS_PASSWORD environment variable is required in production mode');
 }
 
 // Required environment variables check for production
@@ -72,6 +83,11 @@ const requiredEnvVars = [
     'WEAVIATE_SCHEME',
     'WEAVIATE_HOST'
 ];
+
+// Add Redis password to required env vars for production if using Redis
+if (NODE_ENV === 'production' && USE_REDIS === 'true') {
+    requiredEnvVars.push('REDIS_PASSWORD');
+}
 
 // Add email password to required env vars for production if sending emails
 if (NODE_ENV === 'production' && SEND_EMAILS === 'true') {

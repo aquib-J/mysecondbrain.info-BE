@@ -236,7 +236,7 @@ Your responses should be:
 3. Thoughtful and nuanced - consider different perspectives when appropriate
 4. Always formatted in Markdown automatically - use headers, lists, emphasis, and code blocks appropriately
 
-Answer questions based only on the provided context. If you can't find the answer in the context, say "I couldn't find information about that in your documents." 
+Answer questions based only on the provided context. If you can't find the answer in the context, say "I couldn't find information about that from your documents." 
 
 Always cite your sources by referring to the document ID and page number. For example: "According to Document 1 (Page 3)..."
 
