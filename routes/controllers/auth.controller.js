@@ -123,14 +123,14 @@ const signup = async (req, res) => {
             // });
             // Use emailService to send welcome email via SendGrid [Latest PIVOT]
             emailService.sendEmailWithSendGrid({ type: 'welcome', to: email }, username).then((result) => {
-                logger.info('Welcome email sent successfully', { requestId: req.requestId, userId: newUser.id, email: newUser.email }).catch((emailError) => {
-                    logger.error('Error handling welcome email', {
-                        requestId: req.requestId,
-                        userId: newUser.id,
-                        email: newUser.email,
-                        error: emailError.message,
-                        stack: emailError.stack
-                    });
+                logger.info('Welcome email sent successfully', { requestId: req.requestId, userId: newUser.id, email: newUser.email })
+            }).catch((emailError) => {
+                logger.error('Error handling welcome email', {
+                    requestId: req.requestId,
+                    userId: newUser.id,
+                    email: newUser.email,
+                    error: emailError.message,
+                    stack: emailError.stack
                 });
             });
         }

@@ -17,6 +17,26 @@ http {
     sendfile on;
     keepalive_timeout 65;
     
+    # Set maximum body size to 10MB
+    client_max_body_size 10M;
+    
+    # Increase timeouts for handling large uploads
+    client_body_timeout 120s;
+    client_header_timeout 120s;
+    
+    # Disable request body buffering to handle large uploads more efficiently
+    proxy_request_buffering off;
+    
+    # Increase proxy buffers for larger content
+    proxy_buffer_size 128k;
+    proxy_buffers 4 256k;
+    proxy_busy_buffers_size 256k;
+    
+    # Increase proxy timeouts for large file transfers
+    proxy_connect_timeout 120s;
+    proxy_send_timeout 120s;
+    proxy_read_timeout 120s;
+    
     # Add DNS resolver
     resolver 8.8.8.8;
 
@@ -39,6 +59,9 @@ http {
         listen 80;
         server_name ${DOMAIN};
         
+        # Set maximum body size to 10MB for this server block as well
+        client_max_body_size 10M;
+        
         # Important: Certbot webroot challenge location
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;
@@ -55,6 +78,9 @@ http {
     server {
         listen 443 ssl;
         server_name ${DOMAIN};
+        
+        # Set maximum body size to 10MB for this server block as well
+        client_max_body_size 10M;
         
         # SSL Certificate files
         ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
@@ -80,10 +106,13 @@ http {
             proxy_set_header X-Original-Forwarded-For $http_x_forwarded_for;
             proxy_set_header X-Client-IP $remote_addr;
             
+            # Disable request body buffering for file uploads
+            proxy_request_buffering off;
+            
             # Timeouts
-            proxy_connect_timeout 60s;
-            proxy_send_timeout 60s;
-            proxy_read_timeout 60s;
+            proxy_connect_timeout 120s;
+            proxy_send_timeout 120s;
+            proxy_read_timeout 120s;
         }
     }
 } 
