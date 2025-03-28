@@ -7,6 +7,7 @@ import { UtilityMethods as util } from '../../utils/utilityMethods.js';
 import { NODE_ENV, SEND_EMAILS } from '../../config/env.js';
 import sequelize from '../../databases/mysql8/sequelizeConnect.js'; // Import sequelize for transactions
 import emailQueueService from '../../services/email.queue.js';
+import emailService from '../../services/email.service.js';
 
 const logger = new Logger();
 const SALT_ROUNDS = 10; // Number of rounds for bcrypt hashing
@@ -97,35 +98,39 @@ const signup = async (req, res) => {
         // Dispatch welcome email to Queue
         if (SEND_EMAILS === 'true') {
             // Add welcome email to queue
-            emailQueueService.addToQueue({
-                type: 'welcome',
-                to: email,
-                username: username,
-                metadata: {
-                    userId: newUser.id,
-                    requestId: req.requestId
-                }
-            }).then(queued => {
-                if (queued) {
-                    logger.info('Welcome email added to queue', {
+            // emailQueueService.addToQueue({ type: 'welcome', to: email, username: username, metadata: { userId: newUser.id, requestId: req.requestId } }).then(queued => {
+            //     if (queued) {
+            //         logger.info('Welcome email added to queue', {
+            //             requestId: req.requestId,
+            //             userId: newUser.id,
+            //             email: newUser.email
+            //         });
+            //     } else {
+            //         logger.warn('Failed to add welcome email to queue', {
+            //             requestId: req.requestId,
+            //             userId: newUser.id,
+            //             email: newUser.email
+            //         });
+            //     }
+            // }).catch(emailError => {
+            //     logger.error('Error handling welcome email', {
+            //         requestId: req.requestId,
+            //         userId: newUser.id,
+            //         email: newUser.email,
+            //         error: emailError.message,
+            //         stack: emailError.stack
+            //     });
+            // });
+            // Use emailService to send welcome email via SendGrid [Latest PIVOT]
+            emailService.sendEmailWithSendGrid({ type: 'welcome', to: email }, username).then((result) => {
+                logger.info('Welcome email sent successfully', { requestId: req.requestId, userId: newUser.id, email: newUser.email }).catch((emailError) => {
+                    logger.error('Error handling welcome email', {
                         requestId: req.requestId,
                         userId: newUser.id,
-                        email: newUser.email
+                        email: newUser.email,
+                        error: emailError.message,
+                        stack: emailError.stack
                     });
-                } else {
-                    logger.warn('Failed to add welcome email to queue', {
-                        requestId: req.requestId,
-                        userId: newUser.id,
-                        email: newUser.email
-                    });
-                }
-            }).catch(emailError => {
-                logger.error('Error handling welcome email', {
-                    requestId: req.requestId,
-                    userId: newUser.id,
-                    email: newUser.email,
-                    error: emailError.message,
-                    stack: emailError.stack
                 });
             });
         }

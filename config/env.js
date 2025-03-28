@@ -46,7 +46,8 @@ export const {
     EMAIL_PASSWORD,
     EMAIL_FROM,
     SEND_EMAILS,
-    ADMIN_PASS
+    ADMIN_PASS,
+    TWILIO_SENDGRID_API_KEY
 } = process.env;
 
 // Log Redis configuration (with password masked)
@@ -71,6 +72,7 @@ if (NODE_ENV === 'production' && USE_REDIS === 'true' && !REDIS_PASSWORD) {
 
 // Required environment variables check for production
 const requiredEnvVars = [
+    'TWILIO_SENDGRID_API_KEY',
     'DB_URI',
     'JWT_SECRET',
     'OPENAI_API_KEY',

@@ -1,9 +1,11 @@
 import nodemailer from 'nodemailer';
 import Logger from '../utils/Logger.js';
 import { welcomeEmailTemplate } from '../utils/email.templates.js';
-import { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD, NODE_ENV } from '../config/env.js';
+import { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD, NODE_ENV, TWILIO_SENDGRID_API_KEY } from '../config/env.js';
+import sendgrid from '@sendgrid/mail';
 
 const logger = new Logger();
+
 
 /**
  * Email Service for sending various types of emails
@@ -24,6 +26,9 @@ class EmailService {
                 this.createTestAccount();
                 return;
             }
+
+            // Initialize SendGrid [better to use the client Methods later to use better features]
+            sendgrid.setApiKey(TWILIO_SENDGRID_API_KEY);
 
             // Extract email configuration
             const host = EMAIL_HOST || 'smtp.hostinger.com';
@@ -269,6 +274,54 @@ class EmailService {
             port: EMAIL_PORT || 465,
             timestamp: new Date().toISOString()
         };
+    }
+
+
+    /**
+     * Send an email with SendGrid [Latest PIVOT to use SendGrid]
+     * @param {{
+     *  to: string,
+     *  from: string, 
+     *  subject: string, 
+     *  html: string, 
+     *  text: string, 
+     *  type: string ['generic', 'welcome', 'password-reset', 'verification'] , 
+     *  metadata: {
+     *      reportType?:string,
+     *      reportId?:string, 
+     *      reportPeriod?:string
+     *  }}} emailJob - Email job object
+     * @param {string} [username] - Username for welcome email
+     * @returns {Promise<boolean>} - Success or failure
+     */
+    async sendEmailWithSendGrid(emailJob, username = null) {
+        let mailOptions = null;
+        const from = 'app@mysecondbrain.info';
+        try {
+            if (emailJob.type === 'welcome') {
+                mailOptions = {
+                    from,
+                    to: emailJob.to,
+                    subject: 'Welcome to MySecondBrain.info!',
+                    html: welcomeEmailTemplate(username),
+                    text: `Welcome to MySecondBrain.info, ${username}! Thanks for joining. We've created this platform to help you organize and recall important information. While features are currently limited, we're working to expand capabilities soon. Thank you for your support!`,
+                };
+            } else if (emailJob.type === 'generic') {
+                mailOptions = {
+                    from,
+                    to: emailJob.to,
+                    subject: emailJob.subject,
+                    text: emailJob.text,
+                    html: emailJob.html,
+                };
+            }
+
+            const result = await sendgrid.send(mailOptions);
+            return result;
+        } catch (error) {
+            logger.error(`Error sending ${emailJob.type} email`, { error, emailJob });
+            return false;
+        }
     }
 }
 

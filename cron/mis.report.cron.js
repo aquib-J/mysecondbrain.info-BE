@@ -11,7 +11,7 @@ import Logger from '../utils/Logger.js';
 import emailQueueService from '../services/email.queue.js';
 import { misReportEmailTemplate } from '../utils/email.templates.js';
 import { EMAIL_FROM, NODE_ENV } from '../config/env.js';
-
+import emailService from '../services/email.service.js';
 // Configure recipient email (you can set this in your .env file)
 const MIS_REPORT_RECIPIENT = 'aquib.jansher@gmail.com'; // Update with your email
 
@@ -314,6 +314,7 @@ This is an automated report - please do not reply to this email.
         }
 
         const reportId = uuid.v4();
+        const reportPeriod = `${formatDateTime(sanitizedData.timeRange.from)} - ${formatDateTime(sanitizedData.timeRange.to)}`;
 
         // Prepare the email job
         const emailJob = {
@@ -325,22 +326,25 @@ This is an automated report - please do not reply to this email.
             metadata: {
                 reportType: 'mis',
                 reportId: reportId,
-                reportPeriod: `${formatDateTime(sanitizedData.timeRange.from)} - ${formatDateTime(sanitizedData.timeRange.to)}`
+                reportPeriod,
             }
         };
 
-        // Add to email queue
-        const result = await emailQueueService.addToQueue(emailJob);
+        // Add to email queue - disabled for now [DIGITAL OCEAN has blocked all SMTP ports with no way to unblock them]
+        // const result = await emailQueueService.addToQueue(emailJob);
+        const result = await emailService.sendEmailWithSendGrid(emailJob);
 
         if (result) {
             logger.info('MIS report email sent successfully', {
                 recipient: MIS_REPORT_RECIPIENT,
-                reportId: reportId
+                reportId: reportId,
+                reportPeriod,
             });
         } else {
             logger.error('Failed to send MIS report email', {
                 recipient: MIS_REPORT_RECIPIENT,
-                reportId: reportId
+                reportId: reportId,
+                reportPeriod,
             });
         }
 
@@ -348,7 +352,9 @@ This is an automated report - please do not reply to this email.
     } catch (error) {
         logger.error('Error sending MIS report email', {
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            reportId: reportId,
+            reportPeriod,
         });
         return false;
     }
