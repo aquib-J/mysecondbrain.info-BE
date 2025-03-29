@@ -12,7 +12,7 @@ import emailService from '../../services/email.service.js';
 const logger = new Logger();
 const SALT_ROUNDS = 10; // Number of rounds for bcrypt hashing
 
-
+const JWT_ACCESS_EXPIRY = 86400; //24 hour in seconds
 const JWT_REFRESH_EXPIRY = 604800; //7 days in seconds
 
 // Signup route
@@ -81,13 +81,7 @@ const signup = async (req, res) => {
         const accessToken = util.createToken({ userId: newUser.id, username: newUser.username, email: newUser.email }, 'access');
 
         // Set refresh & access tokens as secure cookies
-        Object.entries({ accessToken, refreshToken }).forEach(([tokenName, token]) => {
-            res.cookie(tokenName, token, {
-                httpOnly: true,
-                secure: NODE_ENV === "production",
-                sameSite: 'Strict',
-            });
-        })
+        Object.entries({ accessToken, refreshToken }).forEach(([tokenName, token]) => setCookie(res, tokenName, token));
 
         logger.info('User signup successful', {
             requestId: req.requestId,
@@ -243,13 +237,7 @@ const login = async (req, res) => {
         }
 
         // Set refresh & access tokens as secure cookies
-        Object.entries({ accessToken, refreshToken }).forEach(([tokenName, token]) => {
-            res.cookie(tokenName, token, {
-                httpOnly: true,
-                secure: NODE_ENV === "production",
-                sameSite: 'Strict',
-            });
-        });
+        Object.entries({ accessToken, refreshToken }).forEach(([tokenName, token]) => setCookie(res, tokenName, token));
 
         logger.info('User login successful', {
             requestId: req.requestId,
@@ -306,6 +294,23 @@ const logout = async (req, res) => {
 
 
 };
+
+/**
+ * Set a secure cookie with the given token name and value
+ * @param {Express.Response} res - The response object
+ * @param {string} tokenName - The name of the token (refreshToken or accessToken)
+ * @param {string} token - The value of the token (JWT)
+ */
+const setCookie = (res, tokenName, token) => {
+    res.cookie(tokenName, token, {
+        maxAge: tokenName === 'refreshToken' ? JWT_REFRESH_EXPIRY * 1000 : JWT_ACCESS_EXPIRY * 1000,
+        domain: NODE_ENV === "production" ? '.mysecondbrain.info' : 'localhost',
+        path: '/',
+        httpOnly: true,
+        secure: NODE_ENV === "production",
+        sameSite: 'none',
+    });
+}
 
 export { signup, login, logout };
 
